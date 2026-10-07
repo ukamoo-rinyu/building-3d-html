@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<!--
+Building 3D HTML で作成しました。
+この地図は MapLibre GL JS を使っています（下記ライセンス）。
+
+{{MAPLIBRE_LICENSE}}
+-->
+<style>
+{{MAPLIBRE_CSS}}
+</style>
+<style>
+:root{
+  --bg:#e9ecef; --ground:#dfe3e8; --panel:#fbfcfd; --ink:#1d2733; --muted:#5d6b7a; --line:#d3d9e0;
+  --accent:#2f5d8a; --sel:#ffd23f; --sel-line:#d1006f;
+  --font-ui:"BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;
+}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font-ui)}
+#map{position:absolute;inset:0}
+.panel{position:absolute;top:12px;left:12px;width:300px;max-width:calc(100% - 24px);box-sizing:border-box;max-height:calc(100% - 24px);overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .12)}
+.sec{padding:12px 16px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line)}
+.sec:first-child{border-top:0}
+h1{font-size:17px;margin:0;line-height:1.4;overflow-wrap:anywhere}
+.sub{font-size:12px;color:var(--muted);margin:0}
+.lbl{font-size:11px;color:var(--muted);letter-spacing:.08em}
+.seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{flex:1;font:inherit;font-size:12.5px;padding:6px 4px;border:0;background:transparent;color:var(--ink);cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--panel);font-weight:700}
+.row{display:flex;gap:8px;align-items:center}
+.row input[type=range]{flex:1}
+.num{font-size:12px;color:var(--muted);min-width:3em;text-align:right;font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.legend div{display:flex;align-items:center;gap:8px}
+.sw{width:14px;height:14px;border-radius:3px;flex:none}
+.note{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
+.side{position:absolute;top:12px;right:56px;width:300px;max-width:calc(100% - 68px);box-sizing:border-box;max-height:calc(100% - 24px);overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--sel-line);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .14);padding:14px 16px 12px}
+.side h2{font-size:15px;margin:0 24px 8px 0}
+.side .x{position:absolute;top:6px;right:8px;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:6px}
+.side dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:12.5px}
+.side dt{color:var(--muted)}
+.side dd{margin:0;overflow-wrap:anywhere}
+.dim{font:700 12px/29px var(--font-ui)!important;color:#333!important}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="map" role="application" aria-label="建物の3D地図"></div>
+
+<div class="panel">
+  <div class="sec">
+    <h1 id="title"></h1>
+    <p class="sub" id="count"></p>
+  </div>
+  <div class="sec">
+    <span class="lbl">高さの強調</span>
+    <div class="seg" role="group" aria-label="高さの強調">
+      <button type="button" data-ex="1" aria-pressed="true">1倍</button>
+      <button type="button" data-ex="3" aria-pressed="false">3倍</button>
+      <button type="button" data-ex="5" aria-pressed="false">5倍</button>
+    </div>
+  </div>
+  <div class="sec">
+    <span class="lbl">背景地図</span>
+    <div class="seg" role="group" aria-label="背景地図">
+      <button type="button" data-bm="pale" aria-pressed="true">淡色地図</button>
+      <button type="button" data-bm="none" aria-pressed="false">なし</button>
+    </div>
+    <div class="row"><span class="note">濃さ</span><input type="range" id="bmOp" min="0" max="100" value="35" aria-label="背景の濃さ"><span class="num" id="bmOpV">35%</span></div>
+    <p class="note" id="bmNote" hidden>背景地図を読み込めませんでした（ネットにつながっていない可能性があります）。建物はそのまま表示されます。</p>
+  </div>
+  <div class="sec">
+    <div class="legend" id="legend"></div>
+  </div>
+</div>
+
+<aside class="side" id="side" hidden aria-live="polite">
+  <button type="button" class="x" id="sideX" aria-label="閉じる">×</button>
+  <div id="sideBody"></div>
+</aside>
+
+<script id="config" type="application/json">{{CONFIG_JSON}}</script>
+<script id="data" type="application/json">{{DATA_JSON}}</script>
+<script>
+{{MAPLIBRE_JS}}
+</script>
+<script>
+const CFG = JSON.parse(document.getElementById('config').textContent);
+const DATA = JSON.parse(document.getElementById('data').textContent);
+const PITCH_3D = 55;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+document.title = CFG.title;
+$('title').textContent = CFG.title;
+const nFill = DATA.features.filter(f => f.properties.Hfill).length;
+$('count').textContent = DATA.features.length.toLocaleString() + ' 棟' + (nFill ? '（うち高さを補った建物 ' + nFill.toLocaleString() + ' 棟）' : '');
+$('legend').innerHTML =
+  '<div><span class="sw" style="background:' + esc(CFG.color) + '"></span>建物</div>' +
+  (nFill ? '<div><span class="sw" style="background:' + esc(CFG.color) + ';opacity:.45"></span>半透明：高さが空のため ' + esc(CFG.defaultHeight) + ' m で表示</div>' : '');
+
+const map = new maplibregl.Map({
+  container: 'map',
+  bounds: CFG.bbox,
+  fitBoundsOptions: {padding: 60},
+  maxPitch: 70,
+  dragRotate: false,          // 北を上に固定
+  pitchWithRotate: false,
+  attributionControl: false,
+  style: {
+    version: 8,
+    sources: {
+      pale: {type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
+             tileSize: 256, maxzoom: 18,
+             attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'},
+      b: {type: 'geojson', data: DATA}
+    },
+    layers: [
+      {id: 'bg', type: 'background', paint: {'background-color': css('--ground')}},
+      {id: 'pale', type: 'raster', source: 'pale', paint: {'raster-opacity': .35, 'raster-saturation': -.2}},
+      // 高さのある建物
+      {id: 'bx', type: 'fill-extrusion', source: 'b', filter: ['!', ['has', 'Hfill']],
+       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), CFG.color],
+               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .92, 'fill-extrusion-vertical-gradient': true}},
+      // 高さを補った建物（半透明）
+      {id: 'bxFill', type: 'fill-extrusion', source: 'b', filter: ['has', 'Hfill'],
+       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), CFG.color],
+               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .45}},
+      // 選んだ建物の輪郭
+      {id: 'selLine', type: 'line', source: 'b', filter: ['==', ['id'], -1],
+       paint: {'line-color': css('--sel-line'), 'line-width': 3}}
+    ]
+  }
+});
+map.touchZoomRotate.disableRotation();
+map.keyboard.disableRotation();
+map.once('load', () => map.easeTo({pitch: PITCH_3D, duration: 0}));
+
+map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+
+// 2D／3D 切り替え
+class DimControl {
+  onAdd(m) {
+    const box = document.createElement('div');
+    box.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'dim';
+    const upd = () => { const is3 = m.getPitch() > 5; b.textContent = is3 ? '2D' : '3D';
+      b.title = is3 ? '真上から見る（2D）' : '斜めから見る（3D）'; b.setAttribute('aria-label', b.title); };
+    b.onclick = () => m.easeTo({pitch: m.getPitch() > 5 ? 0 : PITCH_3D, bearing: 0, duration: 600});
+    m.on('pitchend', upd); upd();
+    box.appendChild(b); return box;
+  }
+  onRemove() {}
+}
+map.addControl(new DimControl(), 'top-right');
+map.addControl(new maplibregl.AttributionControl({compact: false, customAttribution: CFG.attribution}), 'bottom-right');
+
+// 背景地図が読めない（オフラインなど）ときは知らせるだけで、建物は表示を続ける
+let tileErr = false;
+map.on('error', e => { if (e.sourceId === 'pale' && !tileErr) { tileErr = true; $('bmNote').hidden = false; } });
+
+// 高さの強調
+document.querySelectorAll('[data-ex]').forEach(btn => btn.onclick = () => {
+  const k = +btn.dataset.ex, h = k === 1 ? ['get', 'H'] : ['*', k, ['get', 'H']];
+  map.setPaintProperty('bx', 'fill-extrusion-height', h);
+  map.setPaintProperty('bxFill', 'fill-extrusion-height', h);
+  document.querySelectorAll('[data-ex]').forEach(x => x.setAttribute('aria-pressed', x === btn));
+});
+
+// 背景地図と濃さ
+document.querySelectorAll('[data-bm]').forEach(btn => btn.onclick = () => {
+  map.setLayoutProperty('pale', 'visibility', btn.dataset.bm === 'pale' ? 'visible' : 'none');
+  document.querySelectorAll('[data-bm]').forEach(x => x.setAttribute('aria-pressed', x === btn));
+});
+$('bmOp').oninput = e => { const v = +e.target.value; $('bmOpV').textContent = v + '%'; map.setPaintProperty('pale', 'raster-opacity', v / 100); };
+
+// クリックで選択・詳細パネル
+let sel = null;
+function clearSel() {
+  if (sel != null) map.setFeatureState({source: 'b', id: sel}, {sel: false});
+  sel = null;
+  map.setFilter('selLine', ['==', ['id'], -1]);
+  $('side').hidden = true;
+}
+function pick(f) {
+  if (sel === f.id) { clearSel(); return; }   // もう一度クリックで解除
+  clearSel();
+  sel = f.id;
+  map.setFeatureState({source: 'b', id: sel}, {sel: true});
+  map.setFilter('selLine', ['==', ['id'], sel]);
+  const p = f.properties;
+  const rows = [['高さ', p.H + ' m' + (p.Hfill ? '（高さが空のため既定値）' : '')]];
+  $('sideBody').innerHTML = '<h2>建物 ' + (sel + 1) + '</h2><dl>' +
+    rows.map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('') + '</dl>';
+  $('side').hidden = false;
+}
+for (const id of ['bx', 'bxFill']) {
+  map.on('click', id, e => { e.preventDefault(); pick(e.features[0]); });
+  map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
+}
+map.on('click', e => { if (!e.defaultPrevented) clearSel(); });
+$('sideX').onclick = clearSel;
+addEventListener('keydown', e => { if (e.key === 'Escape') clearSel(); });
+</script>
+</body>
+</html>

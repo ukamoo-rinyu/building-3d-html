@@ -1,0 +1,39 @@
+# Building 3D HTML（QGISプラグイン）
+
+QGISの面レイヤ（建物など）を、高さの列で立ち上げた **3D地図のHTML（1ファイル）** として書き出すプラグインです。
+MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は表示されます（背景の地理院タイルだけネットが必要）。
+
+- 仕様書：[docs/spec_v0.1.md](docs/spec_v0.1.md)（今回の応募向けの変更は下の「進め方」を優先）
+- 対応QGIS：3.28 以降（Qt5 / Qt6）
+
+## フォルダ
+
+| 場所 | 中身 |
+| --- | --- |
+| `building_3d_html/` | プラグイン本体（このフォルダをQGISのプラグインフォルダに入れる） |
+| `building_3d_html/core/` | 画面と切り離した処理（レイヤ→GeoJSON、HTML組み立て。照合などは後でここに足す） |
+| `building_3d_html/templates/map3d.html` | 出力するHTMLのひな形 |
+| `building_3d_html/vendor/` | MapLibre GL JS 4.7.1（BSD-3ライセンス） |
+| `testdata/` | 試し用の建物データ（市営住宅の住棟、平面直角座標系 第VI系） |
+| `tools/export_testdata.py` | QGISの画面を開かずにテストデータを書き出す確認用スクリプト |
+
+## 自分のQGISに入れて試す
+
+1. QGISを閉じる
+2. エクスプローラーのアドレス欄に `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins` と入れて開く
+3. このリポジトリの `building_3d_html` フォルダを、そこへ丸ごとコピーする
+4. QGISを起動 →「プラグイン」→「プラグインの管理とインストール」→「インストール済」で **Building 3D HTML** にチェック
+5. `testdata/shiei_jutaku_3d_trial.gpkg` をQGISにドラッグし、「市営住宅_住棟」レイヤを追加する
+6. 「Web」メニュー →「Building 3D HTML」→「3D地図をHTMLに書き出す…」
+7. 建物レイヤ＝市営住宅_住棟、高さの列＝高さm（自動で選ばれます）を確認して「書き出す」
+8. 完了画面の「ブラウザで開く」で表示を確かめる
+
+コードを直したあとは、コピーし直してQGISを再起動してください。
+
+## 進め方（PLATEAU AWARD 2026 応募向け）
+
+仕様書 v0.1 から次を変更しています（仕様書より優先）。
+
+- 色分けは「単一シンボル」と「分類（カテゴリ）」だけ対応。段階・ルールベースは後回し
+- 設定の保存、件数の警告、ダークモード、海外データ・OpenStreetMap は後回し
+- v0.1 の後に「点と建物の照合（簡易版）」→「周辺建物・計画建物（最小版）」の順で作る

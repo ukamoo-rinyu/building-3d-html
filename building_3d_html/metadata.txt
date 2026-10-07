@@ -1,0 +1,17 @@
+[general]
+name=Building 3D HTML
+qgisMinimumVersion=3.28
+supportsQt6=True
+description=Export a polygon layer as a single-file 3D map HTML, with buildings extruded by a height field.
+about=Select a polygon layer and a height field, and this plugin writes one HTML file in which the buildings are extruded in 3D (MapLibre GL JS). The HTML works offline: MapLibre is embedded in the file, and only the GSI background tiles need a network connection. Works with PLATEAU building layers and any other polygon layer that has a height field.
+version=0.1.0-dev
+author=りんとゆう
+email=ukamoo@gmail.com
+
+changelog=0.1.0-dev - First working draft: extruded buildings, single colour, GSI pale map background.
+
+tags=3d,html,export,web,maplibre,plateau,building
+category=Web
+icon=icon.svg
+experimental=True
+deprecated=False
