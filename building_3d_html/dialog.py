@@ -103,7 +103,8 @@ class Building3DHtmlDialog(QDialog):
             if match:
                 self.height_field.setField(match)
                 break
-        self.title.setText(layer.name())
+        # gpkg から追加したレイヤ名「ファイル名 — レイヤ名」は、レイヤ名の部分をタイトルにする
+        self.title.setText(layer.name().split(" — ")[-1])
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", layer.name()) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))

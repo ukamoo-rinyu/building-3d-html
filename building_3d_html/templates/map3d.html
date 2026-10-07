@@ -165,9 +165,11 @@ class DimControl {
 map.addControl(new DimControl(), 'top-right');
 map.addControl(new maplibregl.AttributionControl({compact: false, customAttribution: CFG.attribution}), 'bottom-right');
 
-// 背景地図が読めない（オフラインなど）ときは知らせるだけで、建物は表示を続ける
-let tileErr = false;
-map.on('error', e => { if (e.sourceId === 'pale' && !tileErr) { tileErr = true; $('bmNote').hidden = false; } });
+// 背景地図が1枚も読めない（オフラインなど）ときだけ知らせる。建物は表示を続ける。
+// 一部の場所に地図の画像がないだけ（取得に失敗）なら知らせない
+let tileOk = false;
+map.on('data', e => { if (e.sourceId === 'pale' && e.tile) { tileOk = true; $('bmNote').hidden = true; } });
+map.on('error', e => { if (e.sourceId === 'pale' && !tileOk) $('bmNote').hidden = false; });
 
 // 高さの強調
 document.querySelectorAll('[data-ex]').forEach(btn => btn.onclick = () => {
