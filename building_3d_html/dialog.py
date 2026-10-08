@@ -31,12 +31,14 @@ from qgis.PyQt.QtWidgets import (
 from .core.html_builder import write_html
 from .core.layer_export import export_layer
 from .core.style_reader import StyleReader, is_supported, renderer_name
+from .core.surroundings import export_surroundings
 
 SETTINGS_KEY = "building_3d_html/last_dir"
 DEFAULT_COLOR = "#7f9fc4"
 PLATEAU_ATTR = "PLATEAU（国土交通省）"
 HEIGHT_HINTS = ("measuredheight", "height", "高さ")
 NAME_HINTS = ("名称", "name", "名")
+PLAN_COLOR = "#e4572e"
 MANY_CATEGORIES = 20  # これを超える分類は「凡例が長くなる」と知らせる（書き出しは止めない）
 
 
@@ -122,6 +124,31 @@ class Building3DHtmlDialog(QDialog):
         self.color_note = QLabel()
         self.color_note.setWordWrap(True)
 
+        # 計画建物・周辺の建物（どちらも、なくてもよい）
+        self.plan_layer, self.plan_height = self._optional_layer("計画建物は使わない")
+        self.sur_layer, self.sur_height = self._optional_layer("周辺の建物は使わない")
+        self.sur_distance = QDoubleSpinBox()
+        self.sur_distance.setRange(10, 5000)
+        self.sur_distance.setDecimals(0)
+        self.sur_distance.setValue(200)
+        self.sur_distance.setSuffix(" m 以内")
+        self.sur_distance.setToolTip("書き出す建物からこの距離以内の周辺の建物を、灰色で立ち上げる")
+        plan_box = QHBoxLayout()
+        plan_box.addWidget(self.plan_layer, 2)
+        plan_box.addWidget(QLabel("高さの列"))
+        plan_box.addWidget(self.plan_height, 1)
+        sur_box = QHBoxLayout()
+        sur_box.addWidget(self.sur_layer, 2)
+        sur_box.addWidget(QLabel("高さの列"))
+        sur_box.addWidget(self.sur_height, 1)
+        sur_box.addWidget(self.sur_distance)
+        # レイヤ名に「計画」を含む面レイヤがあれば、計画建物に最初から選んでおく
+        for i in range(self.plan_layer.count()):
+            lyr = self.plan_layer.layer(i)
+            if lyr is not None and "計画" in lyr.name():
+                self.plan_layer.setLayer(lyr)
+                break
+
         self.title = QLineEdit()
 
         self.plateau = QCheckBox("出典に「PLATEAU（国土交通省）」を表示する")
@@ -140,6 +167,8 @@ class Building3DHtmlDialog(QDialog):
         form.addRow("表示名の列", self.name_field)
 
         form2 = QFormLayout()
+        form2.addRow("計画建物", plan_box)
+        form2.addRow("周辺の建物", sur_box)
         form2.addRow("色", color_box)
         form2.addRow("", self.color_note)
         form2.addRow("タイトル", self.title)
@@ -192,6 +221,26 @@ class Building3DHtmlDialog(QDialog):
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def _optional_layer(self, empty_text):
+        """「使わない」を選べる面レイヤのプルダウンと、その高さの列。"""
+        combo = QgsMapLayerComboBox()
+        combo.setFilters(_enum(QgsMapLayerProxyModel, "Filter", "PolygonLayer"))
+        combo.setAllowEmptyLayer(True, empty_text)
+        combo.setLayer(None)
+        field = QgsFieldComboBox()
+        field.setFilters(_enum(QgsFieldProxyModel, "Filter", "Numeric"))
+        field.setEnabled(False)
+
+        def changed(layer):
+            field.setLayer(layer)
+            field.setEnabled(layer is not None)
+            if layer is not None:
+                match = _guess_field(layer, HEIGHT_HINTS, numeric=True)
+                if match:
+                    field.setField(match)
+        combo.layerChanged.connect(changed)
+        return combo, field
 
     def update_color(self, layer):
         """対応している色分けなら「QGISのスタイル」を既定にする。対応していなければ単色だけにする。"""
@@ -296,7 +345,25 @@ class Building3DHtmlDialog(QDialog):
                 "nameKey": result.keys.get(name_field),
                 "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
             }
-            size = write_html(path, result.geojson(), config)
+            plan, sur = self.export_plan(), None
+            if plan is not None:
+                config["plan"] = plan["config"]
+                config["bbox"] = _union_bbox(config["bbox"], plan["result"].bbox)
+            sur_layer = self.sur_layer.currentLayer()
+            if sur_layer is not None:
+                sur = export_surroundings(sur_layer, self.sur_height.currentField(),
+                                          self.default_height.value(), result.geojson(),
+                                          self.sur_distance.value())
+            self.extra_lines = []
+            if plan is not None:
+                self.extra_lines.append(f"計画建物：{plan['result'].count:,} 棟（半透明で表示）")
+            if sur is not None:
+                self.extra_lines.append(
+                    f"周辺の建物：{sur.count:,} 棟（{self.sur_distance.value():g} m 以内・灰色）"
+                    + (f"　同じ建物のため除いた {sur.same:,} 棟" if sur.same else ""))
+            size = write_html(path, result.geojson(), config,
+                              surroundings=sur.geojson() if sur is not None else None,
+                              plan=plan["result"].geojson() if plan is not None else None)
         except Exception as e:  # 失敗の理由をそのまま見せる
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "Building 3D HTML", "書き出しに失敗しました。\n\n" + str(e))
@@ -307,6 +374,24 @@ class Building3DHtmlDialog(QDialog):
         self.show_done(path, result, size)
         self.accept()
 
+    def export_plan(self):
+        """計画建物を書き出す。名称の列は見出しに、ほかの列（fid を除く）は詳細に出す。"""
+        layer = self.plan_layer.currentLayer()
+        if layer is None:
+            return None
+        cols = [f.name() for i, f in enumerate(layer.fields())
+                if i not in set(layer.primaryKeyAttributes()) and f.name().lower() != "fid"]
+        name = _guess_field(layer, NAME_HINTS, numeric=False)
+        r = export_layer(layer, self.plan_height.currentField(), self.default_height.value(),
+                         fields=cols, color=PLAN_COLOR)
+        if r.count == 0:
+            return None
+        return {"result": r, "config": {
+            "color": PLAN_COLOR,
+            "nameKey": r.keys.get(name),
+            "columns": [[r.keys[n], n] for n in cols if n in r.keys and n != name],
+        }}
+
     def show_done(self, path, result, size):
         lines = [
             f"書き出した建物：{result.count:,} 棟",
@@ -316,6 +401,7 @@ class Building3DHtmlDialog(QDialog):
             lines.append(f"QGISで表示されない分類のため除外した建物：{result.hidden:,} 棟")
         if result.skipped:
             lines.append(f"形が読めず除外した建物：{result.skipped:,} 棟")
+        lines += getattr(self, "extra_lines", [])
         lines.append(f"ファイルサイズ：{size / 1024 / 1024:.1f} MB")
         lines.append("")
         lines.append(path)
@@ -328,3 +414,18 @@ class Building3DHtmlDialog(QDialog):
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+
+def _guess_field(layer, hints, numeric):
+    """列名にヒントの語を含む列を探す（ヒントの順に優先）。"""
+    for hint in hints:
+        for f in layer.fields():
+            if f.isNumeric() == numeric and hint in f.name().lower():
+                return f.name()
+    return None
+
+
+def _union_bbox(a, b):
+    if not b:
+        return a
+    return [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]

@@ -16,7 +16,7 @@ Building 3D HTML で作成しました。
 <style>
 :root{
   --bg:#e9ecef; --ground:#dfe3e8; --panel:#fbfcfd; --ink:#1d2733; --muted:#5d6b7a; --line:#d3d9e0;
-  --accent:#2f5d8a; --sel:#ffd23f; --sel-line:#d1006f; --rim:#2b3440;
+  --accent:#2f5d8a; --sel:#ffd23f; --sel-line:#d1006f; --rim:#2b3440; --sur:#c4c9cf;
   --font-ui:"BIZ UDPGothic","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;
 }
 [hidden]{display:none!important}
@@ -47,8 +47,10 @@ h1{font-size:17px;margin:0;line-height:1.4;overflow-wrap:anywhere}
 .legend div{display:flex;align-items:center;gap:8px}
 .legend .cnt{margin-left:auto;padding-left:8px;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
 .legend .fill{border-top:1px solid var(--line);padding-top:6px;margin-top:2px;color:var(--muted);font-size:11.5px}
+.legend .sep{border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
 .sw{width:14px;height:14px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .15)}
 .note{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
+label.chk{font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer}
 .side{position:absolute;top:12px;right:56px;width:300px;max-width:calc(100% - 68px);box-sizing:border-box;max-height:calc(100% - 24px);overflow:auto;
   background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--sel-line);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .14);padding:14px 16px 12px}
 .side h2{font-size:15px;margin:0 24px 8px 0}
@@ -85,6 +87,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
     <div class="row"><span class="note">濃さ</span><input type="range" id="bmOp" min="0" max="100" value="35" aria-label="背景の濃さ"><span class="num" id="bmOpV">35%</span></div>
     <p class="note" id="bmNote" hidden>背景地図を読み込めませんでした（ネットにつながっていない可能性があります）。建物はそのまま表示されます。</p>
   </div>
+  <div class="sec" id="showSec" hidden>
+    <span class="lbl">表示</span>
+    <label class="chk" id="planChkRow" hidden><input type="checkbox" id="planChk" checked>計画建物を表示</label>
+    <label class="chk" id="surChkRow" hidden><input type="checkbox" id="surChk" checked>周辺の建物を表示</label>
+  </div>
 </div>
 
 <div class="legendBox">
@@ -99,12 +106,17 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 
 <script id="config" type="application/json">{{CONFIG_JSON}}</script>
 <script id="data" type="application/json">{{DATA_JSON}}</script>
+<script id="sur" type="application/json">{{SUR_JSON}}</script>
+<script id="plan" type="application/json">{{PLAN_JSON}}</script>
 <script>
 {{MAPLIBRE_JS}}
 </script>
 <script>
 const CFG = JSON.parse(document.getElementById('config').textContent);
 const DATA = JSON.parse(document.getElementById('data').textContent);
+const SUR = JSON.parse(document.getElementById('sur').textContent);    // 周辺建物（灰色の背景）
+const PLAN = JSON.parse(document.getElementById('plan').textContent);  // 計画建物（半透明）
+const PCFG = CFG.plan || {};
 const PITCH_3D = 55;
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -118,7 +130,14 @@ $('count').textContent = DATA.features.length.toLocaleString() + ' 棟' + (nFill
 const sw = (color, op) => '<span class="sw" style="background:' + esc(color) + (op ? ';opacity:' + op : '') + '"></span>';
 $('legend').innerHTML =
   CFG.legend.map(it => '<div>' + sw(it.color) + '<span>' + esc(it.label) + '</span><span class="cnt">' + it.count.toLocaleString() + '</span></div>').join('') +
-  (nFill ? '<div class="fill">' + sw(CFG.legend.length === 1 ? CFG.legend[0].color : '#9aa5b1', .45) + '半透明：高さが空のため ' + esc(CFG.defaultHeight) + ' m で表示</div>' : '');
+  (nFill ? '<div class="fill">' + sw(CFG.legend.length === 1 ? CFG.legend[0].color : '#9aa5b1', .45) + '半透明：高さが空のため ' + esc(CFG.defaultHeight) + ' m で表示</div>' : '') +
+  (PLAN.features.length ? '<div class="sep">' + sw(PCFG.color, .55) + '<span>計画建物</span><span class="cnt">' + PLAN.features.length.toLocaleString() + '</span></div>' : '') +
+  (SUR.features.length ? '<div' + (PLAN.features.length ? '' : ' class="sep"') + '>' + sw(css('--sur')) + '<span>周辺の建物</span><span class="cnt">' + SUR.features.length.toLocaleString() + '</span></div>' : '');
+if (PLAN.features.length || SUR.features.length) {
+  $('showSec').hidden = false;
+  $('planChkRow').hidden = !PLAN.features.length;
+  $('surChkRow').hidden = !SUR.features.length;
+}
 // 凡例の高さ：画面の半分まで、かつ左上の操作パネルに重ならない高さまで（中はスクロール）
 function fitLegend() {
   const room = innerHeight - $('panel').getBoundingClientRect().bottom - 28 - 12 - $('legendHead').offsetHeight - 8;
@@ -183,11 +202,16 @@ const map = new maplibregl.Map({
              tileSize: 256, maxzoom: 18,
              attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'},
       b: {type: 'geojson', data: DATA},
-      rim: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}
+      rim: {type: 'geojson', data: {type: 'FeatureCollection', features: []}},
+      sur: {type: 'geojson', data: SUR},
+      plan: {type: 'geojson', data: PLAN}
     },
     layers: [
       {id: 'bg', type: 'background', paint: {'background-color': css('--ground')}},
       {id: 'pale', type: 'raster', source: 'pale', paint: {'raster-opacity': .35, 'raster-saturation': -.2}},
+      // 周辺の建物（灰色の背景。クリックしない）
+      {id: 'surX', type: 'fill-extrusion', source: 'sur',
+       paint: {'fill-extrusion-color': css('--sur'), 'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .85}},
       // 高さのある建物
       {id: 'bx', type: 'fill-extrusion', source: 'b', filter: ['!', ['has', 'Hfill']],
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), ['get', 'C']],
@@ -200,9 +224,16 @@ const map = new maplibregl.Map({
       {id: 'rim', type: 'fill-extrusion', source: 'rim',
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel-line'), css('--rim')],
                'fill-extrusion-base': rimBase(), 'fill-extrusion-height': rimTop(), 'fill-extrusion-opacity': .7}},
+      // 計画建物（半透明の別色）
+      {id: 'planX', type: 'fill-extrusion', source: 'plan',
+       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), PCFG.color || '#e4572e'],
+               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .55}},
       // 選んだ建物の輪郭（地面）
       {id: 'selLine', type: 'line', source: 'b', filter: ['==', ['id'], -1],
-       paint: {'line-color': css('--sel-line'), 'line-width': 3}}
+       paint: {'line-color': css('--sel-line'), 'line-width': 3}},
+      {id: 'planLine', type: 'line', source: 'plan',
+       paint: {'line-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel-line'), PCFG.color || '#e4572e'],
+               'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 3, 1.5], 'line-dasharray': [2, 1]}}
     ]
   }
 });
@@ -218,7 +249,7 @@ function updateRims() {
   if (rimW && Math.abs(w / rimW - 1) < 0.2) return;
   rimW = w;
   map.getSource('rim').setData(makeRims(w));
-  if (sel != null) map.setFeatureState({source: 'rim', id: sel}, {sel: true});
+  if (sel && sel.src === 'b') map.setFeatureState({source: 'rim', id: sel.id}, {sel: true});
 }
 map.on('styledata', updateRims);  // 背景の読み込み完了（load）を待たずに作る
 map.on('zoomend', updateRims);
@@ -253,8 +284,7 @@ map.on('error', e => { if (e.sourceId === 'pale' && !tileOk && $('bmNote').hidde
 document.querySelectorAll('[data-ex]').forEach(btn => btn.onclick = () => {
   const k = +btn.dataset.ex, h = k === 1 ? ['get', 'H'] : ['*', k, ['get', 'H']];
   exag = k;
-  map.setPaintProperty('bx', 'fill-extrusion-height', h);
-  map.setPaintProperty('bxFill', 'fill-extrusion-height', h);
+  for (const id of ['bx', 'bxFill', 'surX', 'planX']) map.setPaintProperty(id, 'fill-extrusion-height', h);
   map.setPaintProperty('rim', 'fill-extrusion-base', rimBase());
   map.setPaintProperty('rim', 'fill-extrusion-height', rimTop());
   document.querySelectorAll('[data-ex]').forEach(x => x.setAttribute('aria-pressed', x === btn));
@@ -265,37 +295,49 @@ document.querySelectorAll('[data-bm]').forEach(btn => btn.onclick = () => {
   map.setLayoutProperty('pale', 'visibility', btn.dataset.bm === 'pale' ? 'visible' : 'none');
   document.querySelectorAll('[data-bm]').forEach(x => x.setAttribute('aria-pressed', x === btn));
 });
+// 計画建物・周辺の建物の表示切り替え
+$('planChk').onchange = e => {
+  for (const id of ['planX', 'planLine']) map.setLayoutProperty(id, 'visibility', e.target.checked ? 'visible' : 'none');
+  if (!e.target.checked && sel && sel.src === 'plan') clearSel();
+};
+$('surChk').onchange = e => map.setLayoutProperty('surX', 'visibility', e.target.checked ? 'visible' : 'none');
 $('bmOp').oninput = e => { const v = +e.target.value; $('bmOpV').textContent = v + '%'; map.setPaintProperty('pale', 'raster-opacity', v / 100); };
 
 // クリックで選択・詳細パネル
-let sel = null;
+let sel = null;  // {src: 'b'（主の建物）か 'plan'（計画建物）, id}
+function setSel(state) {
+  map.setFeatureState({source: sel.src, id: sel.id}, {sel: state});
+  if (sel.src === 'b') map.setFeatureState({source: 'rim', id: sel.id}, {sel: state});
+}
 function clearSel() {
-  if (sel != null) {
-    map.setFeatureState({source: 'b', id: sel}, {sel: false});
-    map.setFeatureState({source: 'rim', id: sel}, {sel: false});
-  }
+  if (sel) setSel(false);
   sel = null;
   map.setFilter('selLine', ['==', ['id'], -1]);
   $('side').hidden = true;
 }
-function pick(f) {
-  if (sel === f.id) { clearSel(); return; }   // もう一度クリックで解除
+function pick(f, src) {
+  if (sel && sel.src === src && sel.id === f.id) { clearSel(); return; }   // もう一度クリックで解除
   clearSel();
-  sel = f.id;
-  map.setFeatureState({source: 'b', id: sel}, {sel: true});
-  map.setFeatureState({source: 'rim', id: sel}, {sel: true});
-  map.setFilter('selLine', ['==', ['id'], sel]);
-  const p = f.properties;
+  sel = {src, id: f.id};
+  setSel(true);
+  if (src === 'b') map.setFilter('selLine', ['==', ['id'], f.id]);
+  const p = f.properties, c = src === 'b' ? CFG : PCFG;
   // 詳細の列（項目名は別名）。値が空なら「—」。最後に3D表示に使った高さを足す
-  const rows = (CFG.columns || []).map(([key, label]) => [label, p[key] == null || p[key] === '' ? '—' : p[key]]);
+  const rows = (c.columns || []).map(([key, label]) => [label, p[key] == null || p[key] === '' ? '—' : p[key]]);
   rows.push(['3D表示の高さ', p.H + ' m' + (p.Hfill ? '（高さが空のため既定値）' : '')]);
-  const name = CFG.nameKey && p[CFG.nameKey] != null && p[CFG.nameKey] !== '' ? p[CFG.nameKey] : '建物 ' + (sel + 1);
-  $('sideBody').innerHTML = '<h2>' + esc(name) + '</h2><dl>' +
+  const fallback = src === 'b' ? '建物 ' + (f.id + 1) : '計画建物';
+  const name = c.nameKey && p[c.nameKey] != null && p[c.nameKey] !== '' ? p[c.nameKey] : fallback;
+  $('sideBody').innerHTML = (src === 'plan' ? '<p class="note" style="color:var(--sel-line);font-weight:700">計画建物</p>' : '') +
+    '<h2>' + esc(name) + '</h2><dl>' +
     rows.map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('') + '</dl>';
   $('side').hidden = false;
 }
+// 計画建物を先に受け付ける（半透明で、ふつうの建物の手前や中にあることが多いため）
+map.on('click', 'planX', e => { e.preventDefault(); pick(e.features[0], 'plan'); });
+map.on('mouseenter', 'planX', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'planX', () => map.getCanvas().style.cursor = '');
 for (const id of ['bx', 'bxFill']) {
-  map.on('click', id, e => { e.preventDefault(); pick(e.features[0]); });
+  map.on('click', id, e => { if (e.defaultPrevented) return; e.preventDefault(); pick(e.features[0], 'b'); });
   map.on('mouseenter', id, () => map.getCanvas().style.cursor = 'pointer');
   map.on('mouseleave', id, () => map.getCanvas().style.cursor = '');
 }
