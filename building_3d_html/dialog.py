@@ -16,6 +16,7 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
@@ -24,9 +25,11 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
+    QWidget,
 )
 
 from .core.html_builder import write_html
@@ -94,7 +97,7 @@ class Building3DHtmlDialog(QDialog):
         self.detail.verticalHeader().setVisible(False)
         self.detail.horizontalHeader().setSectionResizeMode(_enum(QHeaderView, "ResizeMode", "Stretch"))
         self.detail.setSelectionMode(_enum(QAbstractItemView, "SelectionMode", "NoSelection"))
-        self.detail.setMinimumHeight(180)
+        self.detail.setMinimumHeight(150)
         check_all = QPushButton("すべて選ぶ")
         check_none = QPushButton("すべて外す")
         check_all.clicked.connect(lambda: self.set_all_checked(True))
@@ -151,11 +154,10 @@ class Building3DHtmlDialog(QDialog):
         # 「一緒に表示するレイヤ」の枠。それぞれ何に使うかを書いておく
         extra = QGroupBox("一緒に表示するレイヤ（使わないときは空欄のまま）")
         extra_form = QFormLayout(extra)
-        extra_form.addRow(_note("これから建てる建物。半透明の別の色で立ち上げ、HTMLの「計画建物を表示」で"
-                                    "出したり消したりして、今と計画後を見比べられます。上の「建物レイヤ」とは別のレイヤを選びます。"))
+        extra_form.addRow(_note("計画建物：これから建てる建物。半透明で立ち上げ、HTMLでオン・オフして今と見比べられます"
+                                "（上の建物レイヤとは別のレイヤ）。"))
         extra_form.addRow("計画建物", plan_box)
-        extra_form.addRow(_note("まわりの建物（PLATEAUの建物など）。書き出す建物から指定の距離以内だけを、"
-                                    "灰色の背景として立ち上げます。書き出す建物と同じ建物は自動で除きます。"))
+        extra_form.addRow(_note("周辺の建物：まわりの建物（PLATEAUなど）。指定の範囲だけを灰色の背景として立ち上げます。"))
         extra_form.addRow("周辺の建物", sur_box)
         extra_form.addRow("周辺の範囲", dist_box)
 
@@ -190,13 +192,23 @@ class Building3DHtmlDialog(QDialog):
         buttons.accepted.connect(self.export)
         buttons.rejected.connect(self.reject)
 
+        # 中身はスクロールできるようにし、「書き出す」ボタンは常に下に見えるようにする
+        content = QWidget()
+        inner = QVBoxLayout(content)
+        inner.setContentsMargins(0, 0, 6, 0)
+        inner.addLayout(form)
+        inner.addLayout(detail_buttons)
+        inner.addWidget(self.detail)
+        inner.addWidget(extra)
+        inner.addLayout(form2)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(_enum(QFrame, "Shape", "NoFrame"))
+        scroll.setWidget(content)
         layout = QVBoxLayout(self)
-        layout.addLayout(form)
-        layout.addLayout(detail_buttons)
-        layout.addWidget(self.detail)
-        layout.addWidget(extra)
-        layout.addLayout(form2)
+        layout.addWidget(scroll)
         layout.addWidget(buttons)
+        self._fit_to_screen(content)
 
         self.layer.layerChanged.connect(self.on_layer_changed)
         self.on_layer_changed(self.layer.currentLayer())
@@ -231,6 +243,15 @@ class Building3DHtmlDialog(QDialog):
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def _fit_to_screen(self, content):
+        """開いたときの大きさを、画面に収まる範囲にする（はみ出す分はスクロール）。"""
+        screen = QApplication.primaryScreen()
+        if self.parent() is not None and hasattr(self.parent(), "screen") and self.parent().screen():
+            screen = self.parent().screen()
+        avail = screen.availableGeometry()
+        want = content.sizeHint().height() + 70
+        self.resize(min(680, int(avail.width() * 0.9)), min(want, int(avail.height() * 0.88)))
 
     def update_plan(self, main):
         """計画建物の欄には、建物レイヤと同じレイヤを出さない（同じ建物が二重に描かれるため）。
