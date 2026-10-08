@@ -16,6 +16,7 @@ MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は�
 | `building_3d_html/vendor/` | MapLibre GL JS 4.7.1（BSD-3ライセンス） |
 | `testdata/` | 試し用の建物データ（市営住宅の住棟、平面直角座標系 第VI系） |
 | `tools/export_testdata.py` | QGISの画面を開かずにテストデータを書き出す確認用スクリプト |
+| `tools/match_testdata.py` | 照合の確認用スクリプト（試し用の施設 `testdata/試し_施設.gpkg` も作る） |
 
 ## 自分のQGISに入れて試す
 
