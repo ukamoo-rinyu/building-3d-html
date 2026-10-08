@@ -201,8 +201,11 @@ function pick(f) {
   map.setFeatureState({source: 'b', id: sel}, {sel: true});
   map.setFilter('selLine', ['==', ['id'], sel]);
   const p = f.properties;
-  const rows = [['高さ', p.H + ' m' + (p.Hfill ? '（高さが空のため既定値）' : '')]];
-  $('sideBody').innerHTML = '<h2>建物 ' + (sel + 1) + '</h2><dl>' +
+  // 詳細の列（項目名は別名）。値が空なら「—」。最後に3D表示に使った高さを足す
+  const rows = (CFG.columns || []).map(([key, label]) => [label, p[key] == null || p[key] === '' ? '—' : p[key]]);
+  rows.push(['3D表示の高さ', p.H + ' m' + (p.Hfill ? '（高さが空のため既定値）' : '')]);
+  const name = CFG.nameKey && p[CFG.nameKey] != null && p[CFG.nameKey] !== '' ? p[CFG.nameKey] : '建物 ' + (sel + 1);
+  $('sideBody').innerHTML = '<h2>' + esc(name) + '</h2><dl>' +
     rows.map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('') + '</dl>';
   $('side').hidden = false;
 }

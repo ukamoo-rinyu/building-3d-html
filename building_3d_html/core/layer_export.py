@@ -15,6 +15,9 @@ from qgis.core import (
 
 PRECISION = 6  # 小数6桁 ≒ 約10cm
 
+# 地図の表示に使う予約済みの列名（H：高さ、Hfill：高さを補った印、C：色）
+RESERVED = ("H", "Hfill", "C")
+
 # QGIS 3.30 から列挙型の置き場所が変わったため、両方に対応する
 try:
     POLYGON = Qgis.GeometryType.Polygon
@@ -28,6 +31,7 @@ class ExportResult:
         self.bbox = None        # [西, 南, 東, 北]
         self.filled = 0         # 高さを既定値で補った件数
         self.skipped = 0        # 形が読めず除外した件数
+        self.keys = {}          # 列名 → GeoJSON での名前（予約済みの名前と重なったときだけ変わる）
 
     @property
     def count(self):
@@ -50,6 +54,36 @@ def _height(value):
     return h
 
 
+def _json_value(value):
+    """属性の値を JSON に入れられる形（文字・数値・真偽・None）にする。"""
+    if value is None or value == NULL:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+            return None
+        return value
+    if hasattr(value, "toString"):  # 日付・時刻（QDate など）
+        if hasattr(value, "isValid") and not value.isValid():
+            return None
+        return value.toString(_iso())
+    return str(value)
+
+
+def _iso():
+    from qgis.PyQt.QtCore import Qt
+    return getattr(getattr(Qt, "DateFormat", Qt), "ISODate")
+
+
+def _property_key(name):
+    """予約済みの名前（H など）と重なる列は、後ろに「_」を付けて区別する。"""
+    key = name
+    while key in RESERVED:
+        key += "_"
+    return key
+
+
 def _clean_geometry(geom):
     """曲線を直線化し、Z・M を落とした 2D の面にする。面でなければ None。"""
     if geom is None or geom.isNull() or geom.isEmpty():
@@ -65,14 +99,19 @@ def _clean_geometry(geom):
     return g
 
 
-def export_layer(layer, height_field, default_height, selected_only=False):
+def export_layer(layer, height_field, default_height, selected_only=False, fields=()):
     """面レイヤの地物を EPSG:4326 の GeoJSON にし、高さ H を持たせる。
 
     H      … 高さ（m）。空・0・負の値は default_height で補う
     Hfill  … 補った地物だけ 1
     id     … 連番（MapLibre の選択表示に使う）
+    fields … 残す列（表示名の列・詳細に出す列）。列名のまま properties に入れる
     """
     result = ExportResult()
+    layer_fields = layer.fields()
+    keep = [(layer_fields.indexOf(n), _property_key(n)) for n in fields
+            if layer_fields.indexOf(n) >= 0]
+    result.keys = {layer_fields.at(i).name(): k for i, k in keep}
     xform = QgsCoordinateTransform(
         layer.crs(), QgsCoordinateReferenceSystem("EPSG:4326"), QgsProject.instance())
 
@@ -107,6 +146,8 @@ def export_layer(layer, height_field, default_height, selected_only=False):
             props["Hfill"] = 1
             result.filled += 1
         props["H"] = round(h, 2)
+        for i, key in keep:
+            props[key] = _json_value(feat.attribute(i))
 
         fid = len(result.features)
         result.features.append(

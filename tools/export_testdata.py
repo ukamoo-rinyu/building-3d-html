@@ -17,19 +17,26 @@ GPKG = os.path.join(ROOT, "testdata", "shiei_jutaku_3d_trial.gpkg")
 OUT = os.path.join(ROOT, "testdata", "out")
 LAYER = "市営住宅_住棟"
 HEIGHT = "高さm"
+NAME = "住宅名"
+ALIASES = {"高さm": "高さ（m）", "PLATEAU建物ID": "PLATEAUの建物ID"}
 
 
 def export(layer, name, title, selected_only=False):
     from building_3d_html.core.html_builder import write_html
     from building_3d_html.core.layer_export import export_layer
 
-    result = export_layer(layer, HEIGHT, 10, selected_only)
+    # 表示名＝住宅名、詳細＝全列（一部に別名を付けて試す）
+    cols = [(f.name(), ALIASES.get(f.name(), f.name())) for f in layer.fields() if f.name() != "fid"]
+    result = export_layer(layer, HEIGHT, 10, selected_only,
+                          fields=[NAME] + [c[0] for c in cols])
     config = {
         "title": title,
         "bbox": result.bbox,
         "color": "#7f9fc4",
         "defaultHeight": 10,
         "attribution": ["PLATEAU（国土交通省）"],
+        "nameKey": result.keys.get(NAME),
+        "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
     }
     os.makedirs(OUT, exist_ok=True)
     path = os.path.join(OUT, name + ".html")
@@ -60,6 +67,7 @@ def run():
     # 選択中の地物のみ：中央区だけ選ぶ
     layer.selectByExpression("\"区\" = '中央区'")
     export(layer, "3_選択中のみ_中央区", "中央区だけ", selected_only=True)
+
 
 def main():
     app = QgsApplication([], False)

@@ -8,14 +8,23 @@ from qgis.gui import QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl
 from qgis.PyQt.QtGui import QDesktopServices
 from qgis.PyQt.QtWidgets import (
+    QAbstractItemView,
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
     QLineEdit,
     QMessageBox,
+    QPushButton,
+    QRadioButton,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
 )
 
@@ -27,6 +36,7 @@ DEFAULT_COLOR = "#7f9fc4"
 GSI_ATTR = "地理院タイル"
 PLATEAU_ATTR = "PLATEAU（国土交通省）"
 HEIGHT_HINTS = ("measuredheight", "height", "高さ")
+NAME_HINTS = ("名称", "name", "名")
 
 
 def _enum(owner, scoped, name):
@@ -42,13 +52,23 @@ class Building3DHtmlDialog(QDialog):
         super().__init__(parent)
         self.iface = iface
         self.setWindowTitle("Building 3D HTML")
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(520)
 
         self.layer = QgsMapLayerComboBox()
         self.layer.setFilters(_enum(QgsMapLayerProxyModel, "Filter", "PolygonLayer"))
         active = iface.activeLayer()
         if active is not None and self.layer.findText(active.name()) >= 0:
             self.layer.setLayer(active)
+
+        self.target_all = QRadioButton("全件")
+        self.target_sel = QRadioButton("選択中の地物のみ")
+        self.target_group = QButtonGroup(self)
+        self.target_group.addButton(self.target_all)
+        self.target_group.addButton(self.target_sel)
+        target_box = QHBoxLayout()
+        target_box.addWidget(self.target_all)
+        target_box.addWidget(self.target_sel)
+        target_box.addStretch()
 
         self.height_field = QgsFieldComboBox()
         self.height_field.setFilters(_enum(QgsFieldProxyModel, "Filter", "Numeric"))
@@ -59,6 +79,27 @@ class Building3DHtmlDialog(QDialog):
         self.default_height.setValue(10)
         self.default_height.setSuffix(" m")
         self.default_height.setToolTip("高さが空・0・マイナスの建物に使う高さ")
+
+        self.name_field = QgsFieldComboBox()
+        self.name_field.setAllowEmptyFieldName(True)
+        self.name_field.setToolTip("建物をクリックしたとき、パネルの見出しに出す列")
+
+        # 詳細に出す列：チェック・列名・別名（パネルに出す項目名）
+        self.detail = QTableWidget(0, 2)
+        self.detail.setHorizontalHeaderLabels(["列（チェックした列を出す）", "別名（空欄なら列名のまま）"])
+        self.detail.verticalHeader().setVisible(False)
+        self.detail.horizontalHeader().setSectionResizeMode(_enum(QHeaderView, "ResizeMode", "Stretch"))
+        self.detail.setSelectionMode(_enum(QAbstractItemView, "SelectionMode", "NoSelection"))
+        self.detail.setMinimumHeight(180)
+        check_all = QPushButton("すべて選ぶ")
+        check_none = QPushButton("すべて外す")
+        check_all.clicked.connect(lambda: self.set_all_checked(True))
+        check_none.clicked.connect(lambda: self.set_all_checked(False))
+        detail_buttons = QHBoxLayout()
+        detail_buttons.addWidget(QLabel("詳細に出す列"))
+        detail_buttons.addStretch()
+        detail_buttons.addWidget(check_all)
+        detail_buttons.addWidget(check_none)
 
         self.title = QLineEdit()
 
@@ -72,11 +113,15 @@ class Building3DHtmlDialog(QDialog):
 
         form = QFormLayout()
         form.addRow("建物レイヤ", self.layer)
+        form.addRow("対象", target_box)
         form.addRow("高さの列", self.height_field)
         form.addRow("高さが空のとき", self.default_height)
-        form.addRow("タイトル", self.title)
-        form.addRow("", self.plateau)
-        form.addRow("出力先", self.output)
+        form.addRow("表示名の列", self.name_field)
+
+        form2 = QFormLayout()
+        form2.addRow("タイトル", self.title)
+        form2.addRow("", self.plateau)
+        form2.addRow("出力先", self.output)
 
         buttons = QDialogButtonBox(
             _enum(QDialogButtonBox, "StandardButton", "Ok")
@@ -87,6 +132,9 @@ class Building3DHtmlDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addLayout(detail_buttons)
+        layout.addWidget(self.detail)
+        layout.addLayout(form2)
         layout.addWidget(buttons)
 
         self.layer.layerChanged.connect(self.on_layer_changed)
@@ -94,6 +142,9 @@ class Building3DHtmlDialog(QDialog):
 
     def on_layer_changed(self, layer):
         self.height_field.setLayer(layer)
+        self.name_field.setLayer(layer)
+        self.fill_detail(layer)
+        self.update_target(layer)
         if layer is None:
             return
         # 列名に height / 高さ / measuredHeight を含む数値列があれば自動で選ぶ
@@ -103,11 +154,59 @@ class Building3DHtmlDialog(QDialog):
             if match:
                 self.height_field.setField(match)
                 break
+        # 表示名の列：列名に 名称 / name / 名 を含む文字の列があれば自動で選ぶ
+        self.name_field.setField("")
+        for hint in NAME_HINTS:
+            match = next((f.name() for f in layer.fields()
+                          if not f.isNumeric() and hint in f.name().lower()), None)
+            if match:
+                self.name_field.setField(match)
+                break
         # gpkg から追加したレイヤ名「ファイル名 — レイヤ名」は、レイヤ名の部分をタイトルにする
-        self.title.setText(layer.name().split(" — ")[-1])
+        short_name = layer.name().split(" — ")[-1]
+        self.title.setText(short_name)
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
-        safe = re.sub(r'[\\/:*?"<>|]', "_", layer.name()) or "building3d"
+        safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def update_target(self, layer):
+        """選択があれば「選択中の地物のみ」を既定にする。選択がなければ選べなくする。"""
+        n = layer.selectedFeatureCount() if layer is not None else 0
+        self.target_sel.setText(f"選択中の地物のみ（{n:,} 件）")
+        self.target_sel.setEnabled(n > 0)
+        (self.target_sel if n > 0 else self.target_all).setChecked(True)
+
+    def fill_detail(self, layer):
+        """レイヤの列を、レイヤの列順で並べる。最初は全部チェック。別名は QGIS の別名を入れておく。"""
+        self.detail.setRowCount(0)
+        if layer is None:
+            return
+        checkable = _enum(Qt, "ItemFlag", "ItemIsUserCheckable") | _enum(Qt, "ItemFlag", "ItemIsEnabled")
+        for i, field in enumerate(layer.fields()):
+            self.detail.insertRow(i)
+            item = QTableWidgetItem(field.name())
+            item.setFlags(checkable)
+            item.setCheckState(_enum(Qt, "CheckState", "Checked"))
+            self.detail.setItem(i, 0, item)
+            self.detail.setItem(i, 1, QTableWidgetItem(layer.attributeAlias(i)))
+        self.detail.resizeRowsToContents()
+
+    def set_all_checked(self, checked):
+        state = _enum(Qt, "CheckState", "Checked" if checked else "Unchecked")
+        for i in range(self.detail.rowCount()):
+            self.detail.item(i, 0).setCheckState(state)
+
+    def detail_columns(self):
+        """チェックした列の [(列名, 別名), ...]。別名が空なら列名。"""
+        checked = _enum(Qt, "CheckState", "Checked")
+        cols = []
+        for i in range(self.detail.rowCount()):
+            item = self.detail.item(i, 0)
+            if item.checkState() == checked:
+                alias = self.detail.item(i, 1)
+                label = alias.text().strip() if alias is not None else ""
+                cols.append((item.text(), label or item.text()))
+        return cols
 
     def export(self):
         layer = self.layer.currentLayer()
@@ -127,7 +226,11 @@ class Building3DHtmlDialog(QDialog):
 
         QApplication.setOverrideCursor(_enum(Qt, "CursorShape", "WaitCursor"))
         try:
-            result = export_layer(layer, field, self.default_height.value())
+            name_field = self.name_field.currentField()
+            cols = self.detail_columns()
+            keep = list(dict.fromkeys(([name_field] if name_field else []) + [c[0] for c in cols]))
+            result = export_layer(layer, field, self.default_height.value(),
+                                  selected_only=self.target_sel.isChecked(), fields=keep)
             if result.count == 0:
                 QApplication.restoreOverrideCursor()
                 QMessageBox.warning(self, "Building 3D HTML", "書き出せる建物がありませんでした。")
@@ -139,6 +242,8 @@ class Building3DHtmlDialog(QDialog):
                 "color": DEFAULT_COLOR,
                 "defaultHeight": self.default_height.value(),
                 "attribution": attribution,
+                "nameKey": result.keys.get(name_field),
+                "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
             }
             size = write_html(path, result.geojson(), config)
         except Exception as e:  # 失敗の理由をそのまま見せる
