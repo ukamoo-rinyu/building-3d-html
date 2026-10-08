@@ -182,11 +182,14 @@ class Building3DHtmlDialog(QDialog):
         if layer is None:
             return
         checkable = _enum(Qt, "ItemFlag", "ItemIsUserCheckable") | _enum(Qt, "ItemFlag", "ItemIsEnabled")
+        # GeoPackage の fid などの自動の番号は、見る人に意味がないので最初は外しておく
+        auto_ids = set(layer.primaryKeyAttributes())
         for i, field in enumerate(layer.fields()):
             self.detail.insertRow(i)
             item = QTableWidgetItem(field.name())
             item.setFlags(checkable)
-            item.setCheckState(_enum(Qt, "CheckState", "Checked"))
+            off = i in auto_ids or field.name().lower() == "fid"
+            item.setCheckState(_enum(Qt, "CheckState", "Unchecked" if off else "Checked"))
             self.detail.setItem(i, 0, item)
             self.detail.setItem(i, 1, QTableWidgetItem(layer.attributeAlias(i)))
         self.detail.resizeRowsToContents()
