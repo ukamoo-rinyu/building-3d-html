@@ -4,9 +4,9 @@ import os
 import re
 
 from qgis.core import QgsFieldProxyModel, QgsMapLayerProxyModel, QgsSettings
-from qgis.gui import QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
+from qgis.gui import QgsColorButton, QgsFieldComboBox, QgsFileWidget, QgsMapLayerComboBox
 from qgis.PyQt.QtCore import Qt, QUrl
-from qgis.PyQt.QtGui import QDesktopServices
+from qgis.PyQt.QtGui import QColor, QDesktopServices
 from qgis.PyQt.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -30,13 +30,14 @@ from qgis.PyQt.QtWidgets import (
 
 from .core.html_builder import write_html
 from .core.layer_export import export_layer
+from .core.style_reader import StyleReader, is_supported, renderer_name
 
 SETTINGS_KEY = "building_3d_html/last_dir"
 DEFAULT_COLOR = "#7f9fc4"
-GSI_ATTR = "地理院タイル"
 PLATEAU_ATTR = "PLATEAU（国土交通省）"
 HEIGHT_HINTS = ("measuredheight", "height", "高さ")
 NAME_HINTS = ("名称", "name", "名")
+MANY_CATEGORIES = 20  # これを超える分類は「凡例が長くなる」と知らせる（書き出しは止めない）
 
 
 def _enum(owner, scoped, name):
@@ -101,6 +102,26 @@ class Building3DHtmlDialog(QDialog):
         detail_buttons.addWidget(check_all)
         detail_buttons.addWidget(check_none)
 
+        # 色：QGIS のスタイルに合わせる／単色
+        self.color_style = QRadioButton("QGISのスタイルに合わせる")
+        self.color_single = QRadioButton("単色")
+        self.color_group = QButtonGroup(self)
+        self.color_group.addButton(self.color_style)
+        self.color_group.addButton(self.color_single)
+        self.color_button = QgsColorButton()
+        self.color_button.setColor(QColor(DEFAULT_COLOR))
+        self.color_button.setShowNoColor(False)
+        self.color_button.setAllowOpacity(False)
+        self.color_button.setMaximumWidth(80)
+        self.color_single.toggled.connect(self.color_button.setEnabled)
+        color_box = QHBoxLayout()
+        color_box.addWidget(self.color_style)
+        color_box.addWidget(self.color_single)
+        color_box.addWidget(self.color_button)
+        color_box.addStretch()
+        self.color_note = QLabel()
+        self.color_note.setWordWrap(True)
+
         self.title = QLineEdit()
 
         self.plateau = QCheckBox("出典に「PLATEAU（国土交通省）」を表示する")
@@ -119,6 +140,8 @@ class Building3DHtmlDialog(QDialog):
         form.addRow("表示名の列", self.name_field)
 
         form2 = QFormLayout()
+        form2.addRow("色", color_box)
+        form2.addRow("", self.color_note)
         form2.addRow("タイトル", self.title)
         form2.addRow("", self.plateau)
         form2.addRow("出力先", self.output)
@@ -145,6 +168,7 @@ class Building3DHtmlDialog(QDialog):
         self.name_field.setLayer(layer)
         self.fill_detail(layer)
         self.update_target(layer)
+        self.update_color(layer)
         if layer is None:
             return
         # 列名に height / 高さ / measuredHeight を含む数値列があれば自動で選ぶ
@@ -168,6 +192,20 @@ class Building3DHtmlDialog(QDialog):
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def update_color(self, layer):
+        """対応している色分けなら「QGISのスタイル」を既定にする。対応していなければ単色だけにする。"""
+        ok = layer is not None and is_supported(layer)
+        self.color_style.setEnabled(ok)
+        (self.color_style if ok else self.color_single).setChecked(True)
+        self.color_button.setEnabled(not ok)
+        if layer is None:
+            self.color_note.setText("")
+        elif ok:
+            self.color_note.setText(f"このレイヤの色分け：{renderer_name(layer)}")
+        else:
+            self.color_note.setText(f"このレイヤの色分け（{renderer_name(layer)}）にはまだ対応していないため、単色で書き出します。"
+                                    "対応しているのは「単一シンボル」と「分類」です。")
 
     def update_target(self, layer):
         """選択があれば「選択中の地物のみ」を既定にする。選択がなければ選べなくする。"""
@@ -232,8 +270,18 @@ class Building3DHtmlDialog(QDialog):
             name_field = self.name_field.currentField()
             cols = self.detail_columns()
             keep = list(dict.fromkeys(([name_field] if name_field else []) + [c[0] for c in cols]))
+            style = StyleReader(layer) if self.color_style.isChecked() else None
+            if style is not None and len(style.items) > MANY_CATEGORIES:
+                QApplication.restoreOverrideCursor()
+                QMessageBox.information(
+                    self, "Building 3D HTML",
+                    f"分類が {len(style.items)} 個あるため、凡例が長くなります。\n"
+                    "HTMLでは凡例をスクロールして全件を見られます。このまま書き出します。")
+                QApplication.setOverrideCursor(_enum(Qt, "CursorShape", "WaitCursor"))
+            color = self.color_button.color().name()
             result = export_layer(layer, field, self.default_height.value(),
-                                  selected_only=self.target_sel.isChecked(), fields=keep)
+                                  selected_only=self.target_sel.isChecked(), fields=keep,
+                                  style=style, color=color)
             if result.count == 0:
                 QApplication.restoreOverrideCursor()
                 QMessageBox.warning(self, "Building 3D HTML", "書き出せる建物がありませんでした。")
@@ -242,7 +290,7 @@ class Building3DHtmlDialog(QDialog):
             config = {
                 "title": self.title.text().strip() or layer.name(),
                 "bbox": result.bbox,
-                "color": DEFAULT_COLOR,
+                "legend": result.legend,
                 "defaultHeight": self.default_height.value(),
                 "attribution": attribution,
                 "nameKey": result.keys.get(name_field),
@@ -264,6 +312,8 @@ class Building3DHtmlDialog(QDialog):
             f"書き出した建物：{result.count:,} 棟",
             f"高さを補った建物：{result.filled:,} 棟（{self.default_height.value():g} m で表示・半透明）",
         ]
+        if result.hidden:
+            lines.append(f"QGISで表示されない分類のため除外した建物：{result.hidden:,} 棟")
         if result.skipped:
             lines.append(f"形が読めず除外した建物：{result.skipped:,} 棟")
         lines.append(f"ファイルサイズ：{size / 1024 / 1024:.1f} MB")

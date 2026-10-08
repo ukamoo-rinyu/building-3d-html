@@ -31,6 +31,8 @@ class ExportResult:
         self.bbox = None        # [西, 南, 東, 北]
         self.filled = 0         # 高さを既定値で補った件数
         self.skipped = 0        # 形が読めず除外した件数
+        self.hidden = 0         # QGIS の色分けで描かれないため除外した件数
+        self.legend = []        # 凡例 [{"label", "color", "count"}]
         self.keys = {}          # 列名 → GeoJSON での名前（予約済みの名前と重なったときだけ変わる）
 
     @property
@@ -99,11 +101,13 @@ def _clean_geometry(geom):
     return g
 
 
-def export_layer(layer, height_field, default_height, selected_only=False, fields=()):
-    """面レイヤの地物を EPSG:4326 の GeoJSON にし、高さ H を持たせる。
+def export_layer(layer, height_field, default_height, selected_only=False, fields=(),
+                 style=None, color="#7f9fc4"):
+    """面レイヤの地物を EPSG:4326 の GeoJSON にし、高さ H と色 C を持たせる。
 
     H      … 高さ（m）。空・0・負の値は default_height で補う
     Hfill  … 補った地物だけ 1
+    C      … 塗り色（#rrggbb）。style（StyleReader）があれば QGIS の色分け、なければ color の単色
     id     … 連番（MapLibre の選択表示に使う）
     fields … 残す列（表示名の列・詳細に出す列）。列名のまま properties に入れる
     """
@@ -120,10 +124,33 @@ def export_layer(layer, height_field, default_height, selected_only=False, field
         request.setFilterFids(layer.selectedFeatureIds())
 
     field_idx = layer.fields().indexOf(height_field)
+
+    if style is not None:
+        style.start()
+    try:
+        _collect(layer.getFeatures(request), result, xform, field_idx, default_height, keep,
+                 style, color)
+    finally:
+        if style is not None:
+            style.stop()
+
+    if style is not None:
+        result.hidden = style.hidden
+        result.legend = style.legend()
+    else:
+        result.legend = [{"label": layer.name().split(" — ")[-1], "color": color,
+                          "count": result.count}]
+    return result
+
+
+def _collect(features, result, xform, field_idx, default_height, keep, style, color):
     west = south = float("inf")
     east = north = float("-inf")
 
-    for feat in layer.getFeatures(request):
+    for feat in features:
+        c = style.color_for(feat) if style is not None else color
+        if c is None:  # QGIS で描かれない地物は書き出さない
+            continue
         geom = _clean_geometry(feat.geometry())
         if geom is None:
             result.skipped += 1
@@ -146,6 +173,7 @@ def export_layer(layer, height_field, default_height, selected_only=False, field
             props["Hfill"] = 1
             result.filled += 1
         props["H"] = round(h, 2)
+        props["C"] = c
         for i, key in keep:
             props[key] = _json_value(feat.attribute(i))
 
@@ -159,4 +187,3 @@ def export_layer(layer, height_field, default_height, selected_only=False, field
 
     if result.features:
         result.bbox = [round(v, PRECISION) for v in (west, south, east, north)]
-    return result
