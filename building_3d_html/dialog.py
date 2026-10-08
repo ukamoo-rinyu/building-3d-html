@@ -16,6 +16,7 @@ from qgis.PyQt.QtWidgets import (
     QDialogButtonBox,
     QDoubleSpinBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -55,7 +56,7 @@ class Building3DHtmlDialog(QDialog):
         super().__init__(parent)
         self.iface = iface
         self.setWindowTitle("Building 3D HTML")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(600)
 
         self.layer = QgsMapLayerComboBox()
         self.layer.setFilters(_enum(QgsMapLayerProxyModel, "Filter", "PolygonLayer"))
@@ -141,13 +142,22 @@ class Building3DHtmlDialog(QDialog):
         sur_box.addWidget(self.sur_layer, 2)
         sur_box.addWidget(QLabel("高さの列"))
         sur_box.addWidget(self.sur_height, 1)
-        sur_box.addWidget(self.sur_distance)
-        # レイヤ名に「計画」を含む面レイヤがあれば、計画建物に最初から選んでおく
-        for i in range(self.plan_layer.count()):
-            lyr = self.plan_layer.layer(i)
-            if lyr is not None and "計画" in lyr.name():
-                self.plan_layer.setLayer(lyr)
-                break
+        for combo in (self.plan_layer, self.sur_layer):
+            combo.setMinimumWidth(200)
+        dist_box = QHBoxLayout()
+        dist_box.addWidget(self.sur_distance)
+        dist_box.addStretch()
+
+        # 「一緒に表示するレイヤ」の枠。それぞれ何に使うかを書いておく
+        extra = QGroupBox("一緒に表示するレイヤ（使わないときは空欄のまま）")
+        extra_form = QFormLayout(extra)
+        extra_form.addRow(_note("これから建てる建物。半透明の別の色で立ち上げ、HTMLの「計画建物を表示」で"
+                                    "出したり消したりして、今と計画後を見比べられます。上の「建物レイヤ」とは別のレイヤを選びます。"))
+        extra_form.addRow("計画建物", plan_box)
+        extra_form.addRow(_note("まわりの建物（PLATEAUの建物など）。書き出す建物から指定の距離以内だけを、"
+                                    "灰色の背景として立ち上げます。書き出す建物と同じ建物は自動で除きます。"))
+        extra_form.addRow("周辺の建物", sur_box)
+        extra_form.addRow("周辺の範囲", dist_box)
 
         self.title = QLineEdit()
 
@@ -167,8 +177,6 @@ class Building3DHtmlDialog(QDialog):
         form.addRow("表示名の列", self.name_field)
 
         form2 = QFormLayout()
-        form2.addRow("計画建物", plan_box)
-        form2.addRow("周辺の建物", sur_box)
         form2.addRow("色", color_box)
         form2.addRow("", self.color_note)
         form2.addRow("タイトル", self.title)
@@ -186,6 +194,7 @@ class Building3DHtmlDialog(QDialog):
         layout.addLayout(form)
         layout.addLayout(detail_buttons)
         layout.addWidget(self.detail)
+        layout.addWidget(extra)
         layout.addLayout(form2)
         layout.addWidget(buttons)
 
@@ -198,6 +207,7 @@ class Building3DHtmlDialog(QDialog):
         self.fill_detail(layer)
         self.update_target(layer)
         self.update_color(layer)
+        self.update_plan(layer)
         if layer is None:
             return
         # 列名に height / 高さ / measuredHeight を含む数値列があれば自動で選ぶ
@@ -221,6 +231,20 @@ class Building3DHtmlDialog(QDialog):
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def update_plan(self, main):
+        """計画建物の欄には、建物レイヤと同じレイヤを出さない（同じ建物が二重に描かれるため）。
+        まだ選んでいなければ、レイヤ名に「計画」を含む別の面レイヤを選んでおく。"""
+        self.plan_layer.setExceptedLayerList([main] if main is not None else [])
+        current = self.plan_layer.currentLayer()
+        if current is not None and current is main:
+            self.plan_layer.setLayer(None)
+        if self.plan_layer.currentLayer() is None:
+            for i in range(self.plan_layer.count()):
+                lyr = self.plan_layer.layer(i)
+                if lyr is not None and lyr is not main and "計画" in lyr.name():
+                    self.plan_layer.setLayer(lyr)
+                    break
 
     def _optional_layer(self, empty_text):
         """「使わない」を選べる面レイヤのプルダウンと、その高さの列。"""
@@ -414,6 +438,13 @@ class Building3DHtmlDialog(QDialog):
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+
+def _note(text):
+    label = QLabel(text)
+    label.setWordWrap(True)
+    label.setStyleSheet("color: gray;")
+    return label
 
 
 def _guess_field(layer, hints, numeric):
