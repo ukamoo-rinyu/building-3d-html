@@ -63,7 +63,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <body>
 <div id="map" role="application" aria-label="建物の3D地図"></div>
 
-<div class="panel">
+<div class="panel" id="panel">
   <div class="sec">
     <h1 id="title"></h1>
     <p class="sub" id="count"></p>
@@ -119,6 +119,13 @@ const sw = (color, op) => '<span class="sw" style="background:' + esc(color) + (
 $('legend').innerHTML =
   CFG.legend.map(it => '<div>' + sw(it.color) + '<span>' + esc(it.label) + '</span><span class="cnt">' + it.count.toLocaleString() + '</span></div>').join('') +
   (nFill ? '<div class="fill">' + sw(CFG.legend.length === 1 ? CFG.legend[0].color : '#9aa5b1', .45) + '半透明：高さが空のため ' + esc(CFG.defaultHeight) + ' m で表示</div>' : '');
+// 凡例の高さ：画面の半分まで、かつ左上の操作パネルに重ならない高さまで（中はスクロール）
+function fitLegend() {
+  const room = innerHeight - $('panel').getBoundingClientRect().bottom - 28 - 12 - $('legendHead').offsetHeight - 8;
+  $('legend').style.maxHeight = Math.max(60, Math.min(innerHeight / 2, room)) + 'px';
+}
+addEventListener('resize', fitLegend);
+fitLegend();
 $('legendHead').onclick = () => {
   const open = $('legend').hidden;
   $('legend').hidden = !open;
@@ -187,7 +194,7 @@ map.addControl(new maplibregl.AttributionControl({compact: false, customAttribut
 // 一部の場所に地図の画像がないだけ（取得に失敗）なら知らせない
 let tileOk = false;
 map.on('data', e => { if (e.sourceId === 'pale' && e.tile) { tileOk = true; $('bmNote').hidden = true; } });
-map.on('error', e => { if (e.sourceId === 'pale' && !tileOk) $('bmNote').hidden = false; });
+map.on('error', e => { if (e.sourceId === 'pale' && !tileOk && $('bmNote').hidden) { $('bmNote').hidden = false; fitLegend(); } });
 
 // 高さの強調
 document.querySelectorAll('[data-ex]').forEach(btn => btn.onclick = () => {
