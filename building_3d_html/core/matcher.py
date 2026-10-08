@@ -179,6 +179,13 @@ def _find_building(index, da, p, max_distance, geographic):
     return best, NEAR, best_d
 
 
+def _facility_fields(points_layer):
+    """結果に入れる施設の列の番号。fid などの自動の番号は見る人に意味がないので入れない。"""
+    auto_ids = set(points_layer.primaryKeyAttributes())
+    return [i for i, f in enumerate(points_layer.fields())
+            if i not in auto_ids and f.name().lower() != "fid"]
+
+
 def _building_layer(buildings_layer, points_layer, hits, index):
     used = set()
     fields = QgsFields()
@@ -187,7 +194,9 @@ def _building_layer(buildings_layer, points_layer, hits, index):
         f2.setName(_unique(f.name(), used))
         fields.append(f2)
     point_names = []
-    for f in points_layer.fields():
+    facility_idx = _facility_fields(points_layer)
+    for i in facility_idx:
+        f = points_layer.fields().at(i)
         name = f.name() if f.name() not in used else f.name() + FACILITY_SUFFIX
         name = _unique(name, used)
         point_names.append(name)
@@ -210,7 +219,7 @@ def _building_layer(buildings_layer, points_layer, hits, index):
             feat = QgsFeature(fields)
             feat.setGeometry(bf.geometry())
             attrs = list(bf.attributes())
-            for i in range(points_layer.fields().count()):
+            for i in facility_idx:
                 attrs.append(_join(pf.attribute(i) for pf, _, _ in items))
             near = [d for _, s, d in items if s == NEAR]
             attrs.append(len(items))
