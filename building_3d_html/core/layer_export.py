@@ -95,10 +95,26 @@ def _clean_geometry(geom):
     g = QgsGeometry(geom)
     if QgsWkbTypes.isCurvedType(g.wkbType()):
         g = QgsGeometry(g.constGet().segmentize())
+    solid = QgsWkbTypes.hasZ(g.wkbType()) and g.isMultipart() and g.constGet().numGeometries() > 1
     abstract = g.get()
     abstract.dropZValue()
     abstract.dropMValue()
+    if solid:
+        g = _footprint(g)
     return g
+
+
+def _footprint(g):
+    """立体（PLATEAU の LOD1 などで、屋根・床・壁の面がまとめて入った形）を、真上から見た1つの形にする。
+    壁は真上から見ると面積がほぼ0になるので除き、残り（屋根・床）を重ねて合わせる。"""
+    parts = [QgsGeometry(p.clone()) for p in g.constGet()]
+    areas = [p.area() for p in parts]
+    biggest = max(areas) if areas else 0
+    if biggest <= 0:
+        return g
+    keep = [p for p, a in zip(parts, areas) if a > biggest * 1e-6]
+    merged = QgsGeometry.unaryUnion(keep)
+    return merged if merged is not None and not merged.isEmpty() else g
 
 
 def export_layer(layer, height_field, default_height, selected_only=False, fields=(),

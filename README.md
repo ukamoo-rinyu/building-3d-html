@@ -17,6 +17,7 @@ MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は�
 | `testdata/` | 試し用の建物データ（市営住宅の住棟、平面直角座標系 第VI系） |
 | `tools/export_testdata.py` | QGISの画面を開かずにテストデータを書き出す確認用スクリプト |
 | `tools/match_testdata.py` | 照合の確認用スクリプト（試し用の施設 `testdata/試し_施設.gpkg` も作る） |
+| `tools/plateau_lod1_test.py` | PLATEAU の LOD1（立体の面の集まり）が、真上から見た1つの形になるかの確認用スクリプト |
 
 ## 自分のQGISに入れて試す
 
@@ -30,6 +31,12 @@ MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は�
 8. 完了画面の「ブラウザで開く」で表示を確かめる
 
 コードを直したあとは、コピーし直してQGISを再起動してください。
+
+## PLATEAU の建物データで使うとき
+
+1. 「PLATEAU QGIS Plugin」（国土交通省）を入れ、プロセシングツールボックスの「Project PLATEAU」→「PLATEAU 3D都市モデルを読み込む」で CityGML を読み込む
+2. 建物（bldg_Building）のレイヤを、このプラグインの「建物レイヤ」または「周辺の建物」に選ぶ。高さの列は `measuredHeight` が自動で選ばれる
+3. LOD1（立体）で読み込んでも、LOD0（平面）や「3Dデータを強制的に平面化する」で読み込んでも使える。立体は書き出すときに真上から見た1つの形にまとめる
 
 ## 進め方（PLATEAU AWARD 2026 応募向け）
 

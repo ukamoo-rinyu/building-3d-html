@@ -84,7 +84,12 @@ def run():
     points, expect = make_points(buildings)
     opts = QgsVectorFileWriter.SaveVectorOptions()
     opts.driverName, opts.layerName, opts.fileEncoding = "GPKG", "試し_施設", "UTF-8"
-    QgsVectorFileWriter.writeAsVectorFormatV3(points, POINTS_GPKG, QgsProject.instance().transformContext(), opts)
+    try:
+        if os.path.exists(POINTS_GPKG):
+            os.remove(POINTS_GPKG)
+        QgsVectorFileWriter.writeAsVectorFormatV3(points, POINTS_GPKG, QgsProject.instance().transformContext(), opts)
+    except PermissionError:  # QGIS で開いているときは作り直さない（中身は毎回同じ）
+        print("（試し_施設.gpkg は使用中のため作り直しませんでした）")
     print(f"建物 {buildings.featureCount()} 棟（{buildings.crs().authid()}） / 施設 {points.featureCount()} 件（{points.crs().authid()}）")
     print(f"期待：中 {expect['inside']} / 近く {expect['near']} / 建物なし {expect['none']} / 複合 {expect['shared']} 棟")
 
