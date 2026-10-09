@@ -54,6 +54,9 @@ def export(layer, name, title, selected_only=False, use_style=True):
         "legend": result.legend,
         "defaultHeight": 10,
         "attribution": ["PLATEAU（国土交通省）"],
+        "basemaps": ["pale", "photo"],
+        "basemapInitial": "pale",
+        "exaggeration": 1,
         "nameKey": result.keys.get(NAME),
         "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
     }

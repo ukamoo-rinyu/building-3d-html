@@ -12,6 +12,7 @@ from qgis.PyQt.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -163,6 +164,36 @@ class Building3DHtmlDialog(QDialog):
 
         self.title = QLineEdit()
 
+        # 背景地図：HTMLで切り替えられるもの（チェック）と、最初に表示するもの
+        self.bm_pale = QCheckBox("淡色地図")
+        self.bm_photo = QCheckBox("航空写真")
+        self.bm_pale.setChecked(True)
+        self.bm_photo.setChecked(True)
+        self.bm_initial = QComboBox()
+        for cb in (self.bm_pale, self.bm_photo):
+            cb.toggled.connect(self.update_basemap_initial)
+        bm_box = QHBoxLayout()
+        bm_box.addWidget(self.bm_pale)
+        bm_box.addWidget(self.bm_photo)
+        bm_box.addSpacing(16)
+        bm_box.addWidget(QLabel("最初に表示"))
+        bm_box.addWidget(self.bm_initial)
+        bm_box.addStretch()
+        self.update_basemap_initial()
+
+        # 高さの強調：HTMLを開いたときの倍率（HTML側でも 1・3・5倍に切り替えられる）
+        self.exaggeration = QDoubleSpinBox()
+        self.exaggeration.setRange(1, 5)
+        self.exaggeration.setDecimals(1)
+        self.exaggeration.setSingleStep(0.5)
+        self.exaggeration.setValue(1)
+        self.exaggeration.setSuffix(" 倍")
+        self.exaggeration.setToolTip("建物の高さを何倍に強調して表示するか（HTMLを開いたときの値）")
+        ex_box = QHBoxLayout()
+        ex_box.addWidget(self.exaggeration)
+        ex_box.addWidget(_note("HTMLでも 1・3・5倍に切り替えられます"))
+        ex_box.addStretch()
+
         self.plateau = QCheckBox("出典に「PLATEAU（国土交通省）」を表示する")
         self.plateau.setChecked(True)
 
@@ -181,6 +212,8 @@ class Building3DHtmlDialog(QDialog):
         form2 = QFormLayout()
         form2.addRow("色", color_box)
         form2.addRow("", self.color_note)
+        form2.addRow("背景地図", bm_box)
+        form2.addRow("高さの強調", ex_box)
         form2.addRow("タイトル", self.title)
         form2.addRow("", self.plateau)
         form2.addRow("出力先", self.output)
@@ -243,6 +276,22 @@ class Building3DHtmlDialog(QDialog):
         last_dir = QgsSettings().value(SETTINGS_KEY, os.path.expanduser("~"))
         safe = re.sub(r'[\\/:*?"<>|]', "_", short_name) or "building3d"
         self.output.setFilePath(os.path.join(last_dir, safe + "_3d.html"))
+
+    def basemaps(self):
+        return [k for k, cb in (("pale", self.bm_pale), ("photo", self.bm_photo)) if cb.isChecked()]
+
+    def update_basemap_initial(self):
+        """「最初に表示」の選択肢を、チェックした背景地図と「なし」にする。"""
+        keep = self.bm_initial.currentData()
+        names = {"pale": "淡色地図", "photo": "航空写真"}
+        self.bm_initial.blockSignals(True)
+        self.bm_initial.clear()
+        for k in self.basemaps():
+            self.bm_initial.addItem(names[k], k)
+        self.bm_initial.addItem("なし", "none")
+        i = self.bm_initial.findData(keep)
+        self.bm_initial.setCurrentIndex(i if i >= 0 else 0)
+        self.bm_initial.blockSignals(False)
 
     def _fit_to_screen(self, content):
         """開いたときの大きさを、画面に収まる範囲にする（はみ出す分はスクロール）。"""
@@ -387,6 +436,9 @@ class Building3DHtmlDialog(QDialog):
                 "legend": result.legend,
                 "defaultHeight": self.default_height.value(),
                 "attribution": attribution,
+                "basemaps": self.basemaps(),
+                "basemapInitial": self.bm_initial.currentData(),
+                "exaggeration": self.exaggeration.value(),
                 "nameKey": result.keys.get(name_field),
                 "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
             }

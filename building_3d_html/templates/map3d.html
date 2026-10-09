@@ -72,18 +72,11 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
   </div>
   <div class="sec">
     <span class="lbl">高さの強調</span>
-    <div class="seg" role="group" aria-label="高さの強調">
-      <button type="button" data-ex="1" aria-pressed="true">1倍</button>
-      <button type="button" data-ex="3" aria-pressed="false">3倍</button>
-      <button type="button" data-ex="5" aria-pressed="false">5倍</button>
-    </div>
+    <div class="seg" role="group" aria-label="高さの強調" id="exSeg"></div>
   </div>
   <div class="sec">
     <span class="lbl">背景地図</span>
-    <div class="seg" role="group" aria-label="背景地図">
-      <button type="button" data-bm="pale" aria-pressed="true">淡色地図</button>
-      <button type="button" data-bm="none" aria-pressed="false">なし</button>
-    </div>
+    <div class="seg" role="group" aria-label="背景地図" id="bmSeg"></div>
     <div class="row"><span class="note">濃さ</span><input type="range" id="bmOp" min="0" max="100" value="35" aria-label="背景の濃さ"><span class="num" id="bmOpV">35%</span></div>
     <p class="note" id="bmNote" hidden>背景地図を読み込めませんでした（ネットにつながっていない可能性があります）。建物はそのまま表示されます。</p>
   </div>
@@ -157,7 +150,26 @@ $('legendHead').onclick = () => {
 // そこで各辺に沿った細い帯を作り、屋根の高さに薄く載せて「ふち」として見せる。
 // 帯の幅は画面上で1ピクセル弱になるよう、ズームに合わせて作り直す。
 const RIM_LIFT = 0.3;  // 屋根から帯を持ち上げる高さ（m）
-let exag = 1;          // 高さの強調（倍率）
+let exag = CFG.exaggeration || 1;  // 高さの強調（倍率）
+const hExpr = () => exag === 1 ? ['get', 'H'] : ['*', exag, ['get', 'H']];
+
+// 背景地図（地理院タイル）。書き出すときに選んだものだけ使う
+const GSI = 'https://maps.gsi.go.jp/development/ichiran.html';
+const BASEMAPS = {
+  pale: {name: '淡色地図', url: 'https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png', opacity: 35, saturation: -.2,
+         attribution: '<a href="' + GSI + '" target="_blank" rel="noopener">地理院タイル（淡色地図）</a>'},
+  photo: {name: '航空写真', url: 'https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg', opacity: 85, saturation: 0,
+          attribution: '<a href="' + GSI + '" target="_blank" rel="noopener">地理院タイル（全国最新写真（シームレス））</a>'}
+};
+const BM = (CFG.basemaps || ['pale']).filter(k => BASEMAPS[k]);
+let bmNow = BM.includes(CFG.basemapInitial) ? CFG.basemapInitial : (CFG.basemapInitial === 'none' || !BM.length ? 'none' : BM[0]);
+const bmSources = {}, bmLayers = [];
+for (const k of BM) {
+  const b = BASEMAPS[k];
+  bmSources[k] = {type: 'raster', tiles: [b.url], tileSize: 256, maxzoom: 18, attribution: b.attribution};
+  bmLayers.push({id: k, type: 'raster', source: k, layout: {visibility: k === bmNow ? 'visible' : 'none'},
+                 paint: {'raster-opacity': b.opacity / 100, 'raster-saturation': b.saturation}});
+}
 function rimWidth(zoom) {
   const lat = (CFG.bbox[1] + CFG.bbox[3]) / 2;
   const mPerPx = 78271.517 * Math.cos(lat * Math.PI / 180) / Math.pow(2, zoom);
@@ -198,9 +210,7 @@ const map = new maplibregl.Map({
   style: {
     version: 8,
     sources: {
-      pale: {type: 'raster', tiles: ['https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png'],
-             tileSize: 256, maxzoom: 18,
-             attribution: '<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル</a>'},
+      ...bmSources,
       b: {type: 'geojson', data: DATA},
       rim: {type: 'geojson', data: {type: 'FeatureCollection', features: []}},
       sur: {type: 'geojson', data: SUR},
@@ -208,18 +218,18 @@ const map = new maplibregl.Map({
     },
     layers: [
       {id: 'bg', type: 'background', paint: {'background-color': css('--ground')}},
-      {id: 'pale', type: 'raster', source: 'pale', paint: {'raster-opacity': .35, 'raster-saturation': -.2}},
+      ...bmLayers,
       // 周辺の建物（灰色の背景。クリックしない）
       {id: 'surX', type: 'fill-extrusion', source: 'sur',
-       paint: {'fill-extrusion-color': css('--sur'), 'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .85}},
+       paint: {'fill-extrusion-color': css('--sur'), 'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .85}},
       // 高さのある建物
       {id: 'bx', type: 'fill-extrusion', source: 'b', filter: ['!', ['has', 'Hfill']],
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), ['get', 'C']],
-               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .92, 'fill-extrusion-vertical-gradient': true}},
+               'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .92, 'fill-extrusion-vertical-gradient': true}},
       // 高さを補った建物（半透明）
       {id: 'bxFill', type: 'fill-extrusion', source: 'b', filter: ['has', 'Hfill'],
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), ['get', 'C']],
-               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .45}},
+               'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .45}},
       // 輪郭線（屋根のふち）。選んだ建物は強調色
       {id: 'rim', type: 'fill-extrusion', source: 'rim',
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel-line'), css('--rim')],
@@ -227,7 +237,7 @@ const map = new maplibregl.Map({
       // 計画建物（半透明の別色）
       {id: 'planX', type: 'fill-extrusion', source: 'plan',
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), PCFG.color || '#e4572e'],
-               'fill-extrusion-height': ['get', 'H'], 'fill-extrusion-opacity': .55}},
+               'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .55}},
       // 選んだ建物の輪郭（地面）
       {id: 'selLine', type: 'line', source: 'b', filter: ['==', ['id'], -1],
        paint: {'line-color': css('--sel-line'), 'line-width': 3}},
@@ -277,23 +287,37 @@ map.addControl(new maplibregl.AttributionControl({compact: false, customAttribut
 // 背景地図が1枚も読めない（オフラインなど）ときだけ知らせる。建物は表示を続ける。
 // 一部の場所に地図の画像がないだけ（取得に失敗）なら知らせない
 let tileOk = false;
-map.on('data', e => { if (e.sourceId === 'pale' && e.tile) { tileOk = true; $('bmNote').hidden = true; } });
-map.on('error', e => { if (e.sourceId === 'pale' && !tileOk && $('bmNote').hidden) { $('bmNote').hidden = false; fitLegend(); } });
+map.on('data', e => { if (BASEMAPS[e.sourceId] && e.tile) { tileOk = true; $('bmNote').hidden = true; } });
+map.on('error', e => { if (BASEMAPS[e.sourceId] && !tileOk && $('bmNote').hidden) { $('bmNote').hidden = false; fitLegend(); } });
 
-// 高さの強調
+// 高さの強調：1・3・5倍と、書き出すときに決めた倍率のボタン
+const exList = [...new Set([1, 3, 5, exag])].sort((a, b) => a - b);
+$('exSeg').innerHTML = exList.map(k => '<button type="button" data-ex="' + k + '" aria-pressed="' + (k === exag) + '">' + k + '倍</button>').join('');
 document.querySelectorAll('[data-ex]').forEach(btn => btn.onclick = () => {
-  const k = +btn.dataset.ex, h = k === 1 ? ['get', 'H'] : ['*', k, ['get', 'H']];
-  exag = k;
-  for (const id of ['bx', 'bxFill', 'surX', 'planX']) map.setPaintProperty(id, 'fill-extrusion-height', h);
+  exag = +btn.dataset.ex;
+  for (const id of ['bx', 'bxFill', 'surX', 'planX']) map.setPaintProperty(id, 'fill-extrusion-height', hExpr());
   map.setPaintProperty('rim', 'fill-extrusion-base', rimBase());
   map.setPaintProperty('rim', 'fill-extrusion-height', rimTop());
   document.querySelectorAll('[data-ex]').forEach(x => x.setAttribute('aria-pressed', x === btn));
 });
 
-// 背景地図と濃さ
+// 背景地図と濃さ。濃さは背景ごとに覚えておく（淡色地図35%・航空写真85%から）
+const bmOpacity = {};
+for (const k of BM) bmOpacity[k] = BASEMAPS[k].opacity;
+$('bmSeg').innerHTML = [...BM, 'none'].map(k => '<button type="button" data-bm="' + k + '" aria-pressed="' + (k === bmNow) + '">' +
+  (k === 'none' ? 'なし' : BASEMAPS[k].name) + '</button>').join('');
+function showOpacity() {
+  const on = bmNow !== 'none';
+  $('bmOp').disabled = !on;
+  $('bmOp').value = on ? bmOpacity[bmNow] : 0;
+  $('bmOpV').textContent = on ? bmOpacity[bmNow] + '%' : '—';
+}
+showOpacity();
 document.querySelectorAll('[data-bm]').forEach(btn => btn.onclick = () => {
-  map.setLayoutProperty('pale', 'visibility', btn.dataset.bm === 'pale' ? 'visible' : 'none');
+  bmNow = btn.dataset.bm;
+  for (const k of BM) map.setLayoutProperty(k, 'visibility', k === bmNow ? 'visible' : 'none');
   document.querySelectorAll('[data-bm]').forEach(x => x.setAttribute('aria-pressed', x === btn));
+  showOpacity();
 });
 // 計画建物・周辺の建物の表示切り替え
 $('planChk').onchange = e => {
@@ -301,7 +325,12 @@ $('planChk').onchange = e => {
   if (!e.target.checked && sel && sel.src === 'plan') clearSel();
 };
 $('surChk').onchange = e => map.setLayoutProperty('surX', 'visibility', e.target.checked ? 'visible' : 'none');
-$('bmOp').oninput = e => { const v = +e.target.value; $('bmOpV').textContent = v + '%'; map.setPaintProperty('pale', 'raster-opacity', v / 100); };
+$('bmOp').oninput = e => {
+  if (bmNow === 'none') return;
+  bmOpacity[bmNow] = +e.target.value;
+  $('bmOpV').textContent = bmOpacity[bmNow] + '%';
+  map.setPaintProperty(bmNow, 'raster-opacity', bmOpacity[bmNow] / 100);
+};
 
 // クリックで選択・詳細パネル
 let sel = null;  // {src: 'b'（主の建物）か 'plan'（計画建物）, id}
