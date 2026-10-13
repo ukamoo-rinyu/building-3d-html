@@ -5,6 +5,7 @@ testdata の住棟を「建物」とし、そこから試し用の施設（点�
   - 20件に1件：建物の東の端から15m外      → 近くの建物で代用
   - 50件に1件：大阪湾の海の上             → 建物なし
   - 先頭5棟：同じ建物にもう1つ点を足す     → 1棟に2施設（複合施設）
+そのあと「確認しながら直す」と同じように、近くの建物で代用の点を建物の中へ動かし、照合し直して確かめる。
 
 試し用の施設は testdata/試し_施設.gpkg にも保存する（QGIS で照合を試すとき用）。
 
@@ -114,6 +115,33 @@ def run():
             print("  近くの例：", f["住宅名"], "←", f["施設名"], f"/ 距離 {f['距離m']} m")
             break
     print("照合の確認:", "OK" if ok else "NG")
+    return ok and run_fix(points, buildings, r)
+
+
+def run_fix(points, buildings, r):
+    """確認しながら直す：近くの建物で代用の点を建物の中へ動かすと、照合し直したとき「建物の中」になるか。"""
+    from building_3d_html.core.matcher import NEAR, NONE, match, move_into_building, restore_point
+
+    near = [it for it in r.review if it.status == NEAR]
+    none = [it for it in r.review if it.status == NONE]
+    points.startEditing()
+    moved = 0
+    for it in near:
+        if move_into_building(points, it.point_fid, buildings, it.building) is not None:
+            moved += 1
+    # 建物なしの1件目は、元に戻せるかも試す（動かして戻す）
+    back = True
+    if none:
+        it = none[0]
+        first = next(buildings.getFeatures()).id()
+        before = move_into_building(points, it.point_fid, buildings, first)
+        back = before is not None and restore_point(points, it.point_fid, before)
+    r2 = match(points, buildings, max_distance=30)
+    points.rollBack()
+    print(f"直したあと：中 {r2.inside} / 近く {r2.near} / 建物なし {r2.none}（動かした点 {moved} 件）")
+    ok = (moved == len(near) and r2.near == 0 and r2.inside == r.inside + r.near
+          and r2.none == r.none and len(r2.review) == r.none and back)
+    print("確認しながら直すの確認:", "OK" if ok else "NG")
     return ok
 
 

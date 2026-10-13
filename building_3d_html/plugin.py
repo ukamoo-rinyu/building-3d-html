@@ -24,6 +24,8 @@ class Building3DHtml:
         self.iface.addPluginToWebMenu(MENU, self.match_action)
 
     def unload(self):
+        from .review_dock import close_review
+        close_review()
         self.iface.removePluginWebMenu(MENU, self.action)
         self.iface.removePluginWebMenu(MENU, self.match_action)
         self.iface.removeWebToolBarIcon(self.action)

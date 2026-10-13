@@ -59,10 +59,21 @@ class MatchResult:
         self.none = 0           # 建物なしの点
         self.skipped = 0        # 位置が空で照合できなかった点
         self.shared = 0         # 複数の施設が当たった建物の数
+        self.review = []        # 要確認の施設 [ReviewItem]（近くの建物で代用・建物なし）
 
     @property
     def points(self):
         return self.inside + self.near + self.none + self.skipped
+
+
+class ReviewItem:
+    """確認しながら直すときの1件。status は NEAR か NONE、building は当てはめた建物の fid（なければ None）。"""
+
+    def __init__(self, point_fid, status, building=None, distance=None):
+        self.point_fid = point_fid
+        self.status = status
+        self.building = building
+        self.distance = distance
 
 
 def _text(value):
@@ -139,11 +150,13 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
         if fid is None:
             result.none += 1
             unmatched.append(pf)
+            result.review.append(ReviewItem(pf.id(), NONE))
             continue
         if status == INSIDE:
             result.inside += 1
         else:
             result.near += 1
+            result.review.append(ReviewItem(pf.id(), NEAR, fid, dist))
         hits.setdefault(fid, []).append((pf, status, dist))
 
     result.buildings = _building_layer(buildings_layer, points_layer, hits, index)
@@ -252,3 +265,33 @@ def _unmatched_layer(points_layer, unmatched):
     layer.dataProvider().addFeatures(out)
     layer.updateExtents()
     return layer
+
+
+def move_into_building(points_layer, point_fid, buildings_layer, building_fid):
+    """施設の点を、建物の中の1点（pointOnSurface）へ動かす。点レイヤは編集中であること。
+    動かす前の形を返す（元に戻すとき用）。失敗したら None。"""
+    building = buildings_layer.getFeature(building_fid)
+    point = points_layer.getFeature(point_fid)
+    if not building.isValid() or not point.isValid() or not building.hasGeometry():
+        return None
+    target = building.geometry().pointOnSurface()
+    target.transform(QgsCoordinateTransform(buildings_layer.crs(), points_layer.crs(), QgsProject.instance()))
+    if QgsWkbTypes.hasZ(points_layer.wkbType()):
+        target.get().addZValue(0)
+    if QgsWkbTypes.hasM(points_layer.wkbType()):
+        target.get().addMValue(0)
+    if QgsWkbTypes.isMultiType(points_layer.wkbType()):
+        target.convertToMultiType()
+    before = QgsGeometry(point.geometry())
+    points_layer.beginEditCommand("施設の点を建物の中へ移す")
+    ok = points_layer.changeGeometry(point_fid, target)
+    points_layer.endEditCommand()
+    return before if ok else None
+
+
+def restore_point(points_layer, point_fid, geometry):
+    """move_into_building で動かした点を、元の位置に戻す。"""
+    points_layer.beginEditCommand("施設の点を元の位置に戻す")
+    ok = points_layer.changeGeometry(point_fid, QgsGeometry(geometry))
+    points_layer.endEditCommand()
+    return ok

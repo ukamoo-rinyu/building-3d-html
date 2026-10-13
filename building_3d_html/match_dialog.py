@@ -103,31 +103,52 @@ class MatchDialog(QDialog):
             return
         QApplication.restoreOverrideCursor()
 
-        _style_buildings(r.buildings)
-        QgsProject.instance().addMapLayer(r.buildings)
-        if r.unmatched.featureCount():
-            _style_unmatched(r.unmatched)
-            QgsProject.instance().addMapLayer(r.unmatched)
-
-        lines = [
-            f"照合した施設：{r.points:,} 件",
-            f"　建物の中：{r.inside:,} 件",
-            f"　近くの建物で代用：{r.near:,} 件（オレンジ色・要確認）",
-            f"　建物なし：{r.none:,} 件（赤い点・要確認）",
-        ]
-        if r.skipped:
-            lines.append(f"　位置が空で照合できなかった施設：{r.skipped:,} 件")
-        lines += [
-            "",
-            f"結果の建物：{r.buildings.featureCount():,} 棟（うち複数の施設が当たった建物 {r.shared:,} 棟）",
-            "",
-            "「照合結果_建物」「照合結果_建物なし」をレイヤに追加しました。",
-            "どちらも一時レイヤです。残すときは右クリック →「エクスポート」で保存してください。",
-            "",
-            "直すときは、施設の点を正しい建物の中に動かしてから、もう一度照合してください。",
-        ]
-        QMessageBox.information(self, TITLE, "\n".join(lines))
+        ids = add_results(r)
+        lines = summary_lines(r)
+        if r.review:
+            lines += ["", "「確認しながら直す」で、要確認の施設を地図で1件ずつ見て、正しい建物に直せます。"]
+        box = QMessageBox(_enum(QMessageBox, "Icon", "Information"), TITLE, "\n".join(lines), parent=self)
+        fix_btn = None
+        if r.review:
+            fix_btn = box.addButton("確認しながら直す…", _enum(QMessageBox, "ButtonRole", "AcceptRole"))
+        box.addButton("閉じる", _enum(QMessageBox, "ButtonRole", "RejectRole"))
+        box.exec()
         self.accept()
+        if fix_btn is not None and box.clickedButton() == fix_btn:
+            from .review_dock import open_review
+            open_review(self.iface, points, buildings, self.distance.value(),
+                        self.selected_only.isChecked(), r, ids)
+
+
+def add_results(r):
+    """照合結果のレイヤに色を付けてプロジェクトに追加し、追加したレイヤの id を返す。"""
+    _style_buildings(r.buildings)
+    QgsProject.instance().addMapLayer(r.buildings)
+    ids = [r.buildings.id()]
+    if r.unmatched.featureCount():
+        _style_unmatched(r.unmatched)
+        QgsProject.instance().addMapLayer(r.unmatched)
+        ids.append(r.unmatched.id())
+    return ids
+
+
+def summary_lines(r):
+    lines = [
+        f"照合した施設：{r.points:,} 件",
+        f"　建物の中：{r.inside:,} 件",
+        f"　近くの建物で代用：{r.near:,} 件（オレンジ色・要確認）",
+        f"　建物なし：{r.none:,} 件（赤い点・要確認）",
+    ]
+    if r.skipped:
+        lines.append(f"　位置が空で照合できなかった施設：{r.skipped:,} 件")
+    lines += [
+        "",
+        f"結果の建物：{r.buildings.featureCount():,} 棟（うち複数の施設が当たった建物 {r.shared:,} 棟）",
+        "",
+        "「照合結果_建物」「照合結果_建物なし」をレイヤに追加しました。",
+        "どちらも一時レイヤです。残すときは右クリック →「エクスポート」で保存してください。",
+    ]
+    return lines
 
 
 def _fill(color):
