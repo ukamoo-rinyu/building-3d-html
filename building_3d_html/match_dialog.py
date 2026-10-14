@@ -103,11 +103,7 @@ class MatchDialog(QDialog):
             return
         QApplication.restoreOverrideCursor()
 
-        _style_buildings(r.buildings)
-        QgsProject.instance().addMapLayer(r.buildings)
-        if r.unmatched.featureCount():
-            _style_unmatched(r.unmatched)
-            QgsProject.instance().addMapLayer(r.unmatched)
+        layer_ids = add_result_layers(r)
 
         lines = [
             f"照合した施設：{r.points:,} 件",
@@ -123,11 +119,28 @@ class MatchDialog(QDialog):
             "",
             "「照合結果_建物」「照合結果_建物なし」をレイヤに追加しました。",
             "どちらも一時レイヤです。残すときは右クリック →「エクスポート」で保存してください。",
-            "",
-            "直すときは、施設の点を正しい建物の中に動かしてから、もう一度照合してください。",
         ]
+        if r.checks:
+            lines += ["", "要確認の施設は、右に開く「照合の確認・調整」で1件ずつ地図で直せます。"]
         QMessageBox.information(self, TITLE, "\n".join(lines))
         self.accept()
+        if r.checks:
+            from .adjust_dock import open_dock
+            params = {"points": points, "buildings": buildings, "distance": self.distance.value(),
+                      "selected_only": self.selected_only.isChecked()}
+            open_dock(self.iface, params, r, layer_ids)
+
+
+def add_result_layers(r):
+    """照合結果のレイヤに色を付けてプロジェクトに追加し、追加したレイヤの id を返す。"""
+    _style_buildings(r.buildings)
+    QgsProject.instance().addMapLayer(r.buildings)
+    ids = [r.buildings.id()]
+    if r.unmatched.featureCount():
+        _style_unmatched(r.unmatched)
+        QgsProject.instance().addMapLayer(r.unmatched)
+        ids.append(r.unmatched.id())
+    return ids
 
 
 def _fill(color):

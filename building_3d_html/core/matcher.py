@@ -50,6 +50,16 @@ JOIN = " / "
 FACILITY_SUFFIX = "_施設"
 
 
+class Check:
+    """要確認（近くの建物で代用・建物なし）になった施設1件。"""
+
+    def __init__(self, point_fid, status, building_fid=None, distance=None):
+        self.point_fid = point_fid        # 施設レイヤでの fid
+        self.status = status              # NEAR か NONE
+        self.building_fid = building_fid  # 当てはめた建物（建物レイヤでの fid）。建物なしなら None
+        self.distance = distance          # 建物までの距離（m）
+
+
 class MatchResult:
     def __init__(self):
         self.buildings = None   # 結果の建物レイヤ（メモリ）
@@ -59,6 +69,7 @@ class MatchResult:
         self.none = 0           # 建物なしの点
         self.skipped = 0        # 位置が空で照合できなかった点
         self.shared = 0         # 複数の施設が当たった建物の数
+        self.checks = []        # 要確認の施設：Check のリスト（施設の順）
 
     @property
     def points(self):
@@ -139,11 +150,13 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
         if fid is None:
             result.none += 1
             unmatched.append(pf)
+            result.checks.append(Check(pf.id(), NONE))
             continue
         if status == INSIDE:
             result.inside += 1
         else:
             result.near += 1
+            result.checks.append(Check(pf.id(), NEAR, fid, dist))
         hits.setdefault(fid, []).append((pf, status, dist))
 
     result.buildings = _building_layer(buildings_layer, points_layer, hits, index)
