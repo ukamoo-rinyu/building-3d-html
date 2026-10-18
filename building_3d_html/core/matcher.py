@@ -1,12 +1,14 @@
-"""施設（点）と建物（面）の照合（簡易版）。画面には依存しない。
+"""施設（点または敷地の面）と建物（面）の照合（簡易版）。画面には依存しない。
 
-当てはめ方
+当てはめ方（施設が点のとき：1つの施設に1棟）
   1. 点が入っている建物
   2. どれにも入っていなければ、max_distance（m）以内でいちばん近い建物
+当てはめ方（施設が面＝敷地のとき：1つの施設に何棟でも）
+  - 中心（建物の内側にとった点）が敷地に入っている建物を、すべて当てはめる
 結果
   - 建物レイヤ：当たった建物の形 ＋ 建物の属性 ＋ 施設の属性 ＋ 施設数・判定・距離m
     1つの建物に複数の施設が当たったら1行にまとめ、施設の属性は「 / 」でつなぐ
-  - 建物なしレイヤ：どの建物にも当たらなかった点 ＋ 施設の属性 ＋ 判定
+  - 建物なしレイヤ：どの建物にも当たらなかった施設 ＋ 施設の属性 ＋ 判定
 """
 
 import math
@@ -32,9 +34,9 @@ from qgis.PyQt.QtCore import QVariant
 
 # QGIS 3.30 / 3.38 で列挙型・列の型の書き方が変わったため、両方に対応する
 try:
-    POINT = Qgis.GeometryType.Point
+    POINT, POLYGON = Qgis.GeometryType.Point, Qgis.GeometryType.Polygon
 except AttributeError:
-    POINT = QgsWkbTypes.PointGeometry
+    POINT, POLYGON = QgsWkbTypes.PointGeometry, QgsWkbTypes.PolygonGeometry
 _flag_group = getattr(QgsSpatialIndex, "Flag", QgsSpatialIndex)
 STORE_GEOMETRIES = getattr(_flag_group, "FlagStoreFeatureGeometries")
 if Qgis.versionInt() >= 33800:
@@ -45,6 +47,7 @@ else:
 
 INSIDE = "建物の中"
 NEAR = "近くの建物で代用"
+SITE = "敷地の中"
 NONE = "建物なし"
 JOIN = " / "
 FACILITY_SUFFIX = "_施設"
@@ -55,6 +58,8 @@ class MatchResult:
         self.buildings = None   # 結果の建物レイヤ（メモリ）
         self.unmatched = None   # 建物なしの点レイヤ（メモリ）
         self.inside = 0         # 建物の中に入っていた点
+        self.site = 0           # 敷地の中に建物があった施設（面）
+        self.site_buildings = 0 # 敷地の中にあった建物の数（重なりは1棟と数える）
         self.near = 0           # 近くの建物で代用した点
         self.none = 0           # 建物なしの点
         self.skipped = 0        # 位置が空で照合できなかった点
@@ -62,7 +67,7 @@ class MatchResult:
 
     @property
     def points(self):
-        return self.inside + self.near + self.none + self.skipped
+        return self.inside + self.site + self.near + self.none + self.skipped
 
 
 def _text(value):
@@ -104,8 +109,15 @@ def _to_point(geom):
     return geom.asPoint()
 
 
+def is_site_layer(layer):
+    """施設のレイヤが面（敷地）なら True。"""
+    return layer.geometryType() == POLYGON
+
+
 def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only=False):
-    """照合して MatchResult を返す。結果のレイヤはプロジェクトにはまだ追加しない。"""
+    """照合して MatchResult を返す。結果のレイヤはプロジェクトにはまだ追加しない。
+
+    points_layer は施設のレイヤ。面のレイヤなら敷地として扱い、max_distance は使わない。"""
     result = MatchResult()
     project = QgsProject.instance()
     b_crs = buildings_layer.crs()
@@ -126,7 +138,22 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
     if selected_points_only:
         request.setFilterFids(points_layer.selectedFeatureIds())
 
+    sites = is_site_layer(points_layer)
+    centers = {}  # 建物の fid → 建物の内側にとった点（敷地のとき使う）
     for pf in points_layer.getFeatures(request):
+        if sites:
+            fids = _find_buildings_in_site(index, centers, pf.geometry(), to_b)
+            if fids is None:
+                result.skipped += 1
+            elif not fids:
+                result.none += 1
+                unmatched.append(pf)
+            else:
+                result.site += 1
+                for fid in fids:
+                    hits.setdefault(fid, []).append((pf, SITE, 0.0))
+            continue
+
         pt = _to_point(pf.geometry())
         if pt is None:
             result.skipped += 1
@@ -149,7 +176,27 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
     result.buildings = _building_layer(buildings_layer, points_layer, hits, index)
     result.unmatched = _unmatched_layer(points_layer, unmatched)
     result.shared = sum(1 for v in hits.values() if len(v) > 1)
+    if sites:
+        result.site_buildings = len(hits)
     return result
+
+
+def _find_buildings_in_site(index, centers, geom, to_b):
+    """敷地の面に中心が入っている建物の fid のリスト。敷地の形が空なら None。"""
+    if geom is None or geom.isNull() or geom.isEmpty():
+        return None
+    site = QgsGeometry(geom)
+    site.transform(to_b)
+    engine = QgsGeometry.createGeometryEngine(site.constGet())
+    engine.prepareGeometry()
+    found = []
+    for fid in index.intersects(site.boundingBox()):
+        if fid not in centers:
+            centers[fid] = index.geometry(fid).pointOnSurface()
+        c = centers[fid]
+        if not c.isEmpty() and engine.contains(c.constGet()):
+            found.append(fid)
+    return found
 
 
 def _find_building(index, da, p, max_distance, geographic):
@@ -223,7 +270,10 @@ def _building_layer(buildings_layer, points_layer, hits, index):
                 attrs.append(_join(pf.attribute(i) for pf, _, _ in items))
             near = [d for _, s, d in items if s == NEAR]
             attrs.append(len(items))
-            attrs.append(NEAR if near else INSIDE)  # 1つでも近くで代用なら要確認
+            if near:  # 1つでも近くで代用なら要確認
+                attrs.append(NEAR)
+            else:
+                attrs.append(items[0][1])  # 建物の中 または 敷地の中
             attrs.append(round(max(near), 1) if near else 0.0)
             assert len(attrs) == n_b + len(point_names) + 3
             feat.setAttributes(attrs)
