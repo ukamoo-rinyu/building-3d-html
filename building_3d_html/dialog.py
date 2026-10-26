@@ -59,7 +59,7 @@ class Building3DHtmlDialog(QDialog):
     def __init__(self, iface, parent=None):
         super().__init__(parent)
         self.iface = iface
-        self.setWindowTitle("Building 3D HTML")
+        self.setWindowTitle("Building Connect & 3D Publish for PLATEAU")
         self.setMinimumWidth(600)
 
         self.layer = QgsMapLayerComboBox()
@@ -397,13 +397,13 @@ class Building3DHtmlDialog(QDialog):
         field = self.height_field.currentField()
         path = self.output.filePath().strip()
         if layer is None:
-            QMessageBox.warning(self, "Building 3D HTML", "建物レイヤ（面のレイヤ）を選んでください。")
+            QMessageBox.warning(self, "Building Connect & 3D Publish for PLATEAU", "建物レイヤ（面のレイヤ）を選んでください。")
             return
         if not field:
-            QMessageBox.warning(self, "Building 3D HTML", "高さの列を選んでください。")
+            QMessageBox.warning(self, "Building Connect & 3D Publish for PLATEAU", "高さの列を選んでください。")
             return
         if not path:
-            QMessageBox.warning(self, "Building 3D HTML", "出力先のファイルを指定してください。")
+            QMessageBox.warning(self, "Building Connect & 3D Publish for PLATEAU", "出力先のファイルを指定してください。")
             return
         if not path.lower().endswith((".html", ".htm")):
             path += ".html"
@@ -417,7 +417,7 @@ class Building3DHtmlDialog(QDialog):
             if style is not None and len(style.items) > MANY_CATEGORIES:
                 QApplication.restoreOverrideCursor()
                 QMessageBox.information(
-                    self, "Building 3D HTML",
+                    self, "Building Connect & 3D Publish for PLATEAU",
                     f"分類が {len(style.items)} 個あるため、凡例が長くなります。\n"
                     "HTMLでは凡例をスクロールして全件を見られます。このまま書き出します。")
                 QApplication.setOverrideCursor(_enum(Qt, "CursorShape", "WaitCursor"))
@@ -427,7 +427,7 @@ class Building3DHtmlDialog(QDialog):
                                   style=style, color=color)
             if result.count == 0:
                 QApplication.restoreOverrideCursor()
-                QMessageBox.warning(self, "Building 3D HTML", "書き出せる建物がありませんでした。")
+                QMessageBox.warning(self, "Building Connect & 3D Publish for PLATEAU", "書き出せる建物がありませんでした。")
                 return
             attribution = [PLATEAU_ATTR] if self.plateau.isChecked() else []
             config = {
@@ -463,7 +463,7 @@ class Building3DHtmlDialog(QDialog):
                               plan=plan["result"].geojson() if plan is not None else None)
         except Exception as e:  # 失敗の理由をそのまま見せる
             QApplication.restoreOverrideCursor()
-            QMessageBox.critical(self, "Building 3D HTML", "書き出しに失敗しました。\n\n" + str(e))
+            QMessageBox.critical(self, "Building Connect & 3D Publish for PLATEAU", "書き出しに失敗しました。\n\n" + str(e))
             return
         QApplication.restoreOverrideCursor()
 

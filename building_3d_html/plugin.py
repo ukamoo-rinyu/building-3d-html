@@ -3,7 +3,7 @@ import os
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import QAction
 
-MENU = "&Building 3D HTML"
+MENU = "&Building Connect && 3D Publish for PLATEAU"
 
 
 class Building3DHtml:

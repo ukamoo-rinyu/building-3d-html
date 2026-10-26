@@ -1,5 +1,5 @@
 [general]
-name=Building 3D HTML
+name=Building Connect & 3D Publish for PLATEAU
 qgisMinimumVersion=3.28
 supportsQt6=True
 description=Export a polygon layer as a single-file 3D map HTML, with buildings extruded by a height field.

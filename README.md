@@ -1,4 +1,4 @@
-# Building 3D HTML（QGISプラグイン）
+# Building Connect & 3D Publish for PLATEAU（QGISプラグイン）
 
 QGISの面レイヤ（建物など）を、高さの列で立ち上げた **3D地図のHTML（1ファイル）** として書き出すプラグインです。
 MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は表示されます（背景の地理院タイルだけネットが必要）。
@@ -27,9 +27,9 @@ MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は�
 1. QGISを閉じる
 2. エクスプローラーのアドレス欄に `%APPDATA%\QGIS\QGIS3\profiles\default\python\plugins` と入れて開く
 3. このリポジトリの `building_3d_html` フォルダを、そこへ丸ごとコピーする
-4. QGISを起動 →「プラグイン」→「プラグインの管理とインストール」→「インストール済」で **Building 3D HTML** にチェック
+4. QGISを起動 →「プラグイン」→「プラグインの管理とインストール」→「インストール済」で **Building Connect & 3D Publish for PLATEAU** にチェック
 5. `testdata/shiei_jutaku_3d_trial.gpkg` をQGISにドラッグし、「市営住宅_住棟」レイヤを追加する
-6. 「Web」メニュー →「Building 3D HTML」→「3D地図をHTMLに書き出す…」
+6. 「Web」メニュー →「Building Connect & 3D Publish for PLATEAU」→「3D地図をHTMLに書き出す…」
 7. 建物レイヤ＝市営住宅_住棟、高さの列＝高さm（自動で選ばれます）を確認して「書き出す」
 8. 完了画面の「ブラウザで開く」で表示を確かめる
 
