@@ -92,6 +92,13 @@ class Building3DHtmlDialog(QDialog):
         self.name_field = QgsFieldComboBox()
         self.name_field.setAllowEmptyFieldName(True)
         self.name_field.setToolTip("建物をクリックしたとき、パネルの見出しに出す列")
+        self.show_labels = QCheckBox("地図にラベルで出す")
+        self.show_labels.setChecked(True)
+        self.show_labels.setToolTip("表示名がある建物に、名前を地図の上に出す（HTMLでオン・オフできます）")
+        self.name_field.fieldChanged.connect(lambda name: self.show_labels.setEnabled(bool(name)))
+        name_box = QHBoxLayout()
+        name_box.addWidget(self.name_field, 1)
+        name_box.addWidget(self.show_labels)
 
         # 詳細に出す列：チェック・列名・別名（パネルに出す項目名）
         self.detail = QTableWidget(0, 2)
@@ -188,7 +195,7 @@ class Building3DHtmlDialog(QDialog):
         bm_box.addWidget(QLabel("最初に表示"))
         bm_box.addWidget(self.bm_initial)
         bm_box.addStretch()
-        self.update_basemap_initial()
+        self.update_basemap_initial("photo")
 
         # 高さの強調：HTMLを開いたときの倍率（HTML側でも 1・3・5倍に切り替えられる）
         self.exaggeration = QDoubleSpinBox()
@@ -216,7 +223,7 @@ class Building3DHtmlDialog(QDialog):
         form.addRow("対象", target_box)
         form.addRow("高さの列", self.height_field)
         form.addRow("高さが空のとき", self.default_height)
-        form.addRow("表示名の列", self.name_field)
+        form.addRow("表示名の列", name_box)
 
         form2 = QFormLayout()
         form2.addRow("色", color_box)
@@ -231,6 +238,7 @@ class Building3DHtmlDialog(QDialog):
             _enum(QDialogButtonBox, "StandardButton", "Ok")
             | _enum(QDialogButtonBox, "StandardButton", "Cancel"))
         buttons.button(_enum(QDialogButtonBox, "StandardButton", "Ok")).setText("書き出す")
+        buttons.button(_enum(QDialogButtonBox, "StandardButton", "Cancel")).setText("閉じる")
         buttons.accepted.connect(self.export)
         buttons.rejected.connect(self.reject)
 
@@ -290,9 +298,10 @@ class Building3DHtmlDialog(QDialog):
     def basemaps(self):
         return [k for k, cb in (("pale", self.bm_pale), ("photo", self.bm_photo)) if cb.isChecked()]
 
-    def update_basemap_initial(self):
-        """「最初に表示」の選択肢を、チェックした背景地図と「なし」にする。"""
-        keep = self.bm_initial.currentData()
+    def update_basemap_initial(self, keep=None):
+        """「最初に表示」の選択肢を、チェックした背景地図と「なし」にする。
+        keep：選んでおく背景（最初は航空写真）。なければ今選んでいるもの。"""
+        keep = keep or self.bm_initial.currentData()
         names = {"pale": "淡色地図", "photo": "航空写真"}
         self.bm_initial.blockSignals(True)
         self.bm_initial.clear()
@@ -463,6 +472,7 @@ class Building3DHtmlDialog(QDialog):
                 "basemapInitial": self.bm_initial.currentData(),
                 "exaggeration": self.exaggeration.value(),
                 "nameKey": result.keys.get(name_field),
+                "labels": bool(name_field) and self.show_labels.isChecked(),
                 "columns": [[result.keys[n], label] for n, label in cols if n in result.keys],
             }
             plan, sur = self.export_plan(), None
@@ -499,8 +509,8 @@ class Building3DHtmlDialog(QDialog):
         QApplication.restoreOverrideCursor()
 
         QgsSettings().setValue(SETTINGS_KEY, os.path.dirname(path))
+        # 画面は閉じない（設定を変えて、続けて書き出し直せるように）
         self.show_done(path, result, size)
-        self.accept()
 
     def export_plan(self):
         """計画建物を書き出す。名称の列は見出しに、ほかの列（fid を除く）は詳細に出す。"""
@@ -538,7 +548,7 @@ class Building3DHtmlDialog(QDialog):
         box.setWindowTitle("書き出しました")
         box.setText("\n".join(lines))
         open_btn = box.addButton("ブラウザで開く", _enum(QMessageBox, "ButtonRole", "AcceptRole"))
-        box.addButton("閉じる", _enum(QMessageBox, "ButtonRole", "RejectRole"))
+        box.addButton("OK", _enum(QMessageBox, "ButtonRole", "RejectRole"))
         box.exec()
         if box.clickedButton() is open_btn:
             QDesktopServices.openUrl(QUrl.fromLocalFile(path))
