@@ -32,9 +32,9 @@ def _code_for_script(text):
 EMPTY = {"type": "FeatureCollection", "features": []}
 
 
-def build_html(geojson, config, surroundings=None, plan=None):
+def build_html(geojson, config, surroundings=None, plan=None, boundary=None):
     """config: title, bbox, attribution（出典の追加表記のリスト）など。
-    surroundings：周辺建物（灰色の背景）、plan：計画建物（半透明）の GeoJSON。なければ空。"""
+    surroundings：周辺建物（灰色の背景）、plan：計画建物（半透明）、boundary：境界（地面の線）の GeoJSON。なければ空。"""
     slots = {
         "TITLE": html.escape(config.get("title", "")),
         "MAPLIBRE_CSS": _code_for_script(_read(os.path.join(VENDOR, "maplibre-gl.css"))),
@@ -44,13 +44,14 @@ def build_html(geojson, config, surroundings=None, plan=None):
         "DATA_JSON": _json_for_script(geojson),
         "SUR_JSON": _json_for_script(surroundings or EMPTY),
         "PLAN_JSON": _json_for_script(plan or EMPTY),
+        "BND_JSON": _json_for_script(boundary or EMPTY),
     }
     # 1回の走査で置き換える（埋め込んだ中身に {{…}} があっても再置換しない）
     return _SLOT.sub(lambda m: slots[m.group(1)], _read(TEMPLATE))
 
 
-def write_html(path, geojson, config, surroundings=None, plan=None):
-    text = build_html(geojson, config, surroundings, plan)
+def write_html(path, geojson, config, surroundings=None, plan=None, boundary=None):
+    text = build_html(geojson, config, surroundings, plan, boundary)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     return os.path.getsize(path)

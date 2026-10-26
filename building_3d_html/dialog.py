@@ -33,6 +33,7 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
+from .core.boundary import export_boundary
 from .core.html_builder import write_html
 from .core.layer_export import export_layer
 from .core.style_reader import StyleReader, is_supported, renderer_name
@@ -151,6 +152,11 @@ class Building3DHtmlDialog(QDialog):
         dist_box = QHBoxLayout()
         dist_box.addWidget(self.sur_distance)
         dist_box.addStretch()
+        self.bnd_layer = QgsMapLayerComboBox()
+        self.bnd_layer.setFilters(_enum(QgsMapLayerProxyModel, "Filter", "PolygonLayer"))
+        self.bnd_layer.setAllowEmptyLayer(True, "境界は使わない")
+        self.bnd_layer.setLayer(None)
+        self.bnd_layer.setMinimumWidth(200)
 
         # 「一緒に表示するレイヤ」の枠。それぞれ何に使うかを書いておく
         extra = QGroupBox("一緒に表示するレイヤ（使わないときは空欄のまま）")
@@ -161,6 +167,9 @@ class Building3DHtmlDialog(QDialog):
         extra_form.addRow(_note("周辺の建物：まわりの建物（PLATEAUなど）。指定の範囲だけを灰色の背景として立ち上げます。"))
         extra_form.addRow("周辺の建物", sur_box)
         extra_form.addRow("周辺の範囲", dist_box)
+        extra_form.addRow(_note("境界：区境界などの面のレイヤ。建物のまわりにかかる境界を、地面に線で引きます"
+                                "（HTMLでオン・オフできます）。"))
+        extra_form.addRow("境界", self.bnd_layer)
 
         self.title = QLineEdit()
 
@@ -253,6 +262,7 @@ class Building3DHtmlDialog(QDialog):
         self.update_target(layer)
         self.update_color(layer)
         self.update_plan(layer)
+        self.update_boundary(layer)
         if layer is None:
             return
         # 列名に height / 高さ / measuredHeight を含む数値列があれば自動で選ぶ
@@ -314,6 +324,19 @@ class Building3DHtmlDialog(QDialog):
                 lyr = self.plan_layer.layer(i)
                 if lyr is not None and lyr is not main and "計画" in lyr.name():
                     self.plan_layer.setLayer(lyr)
+                    break
+
+    def update_boundary(self, main):
+        """境界の欄には、建物レイヤと同じレイヤを出さない。
+        まだ選んでいなければ、レイヤ名に「境界」を含む別の面レイヤを選んでおく。"""
+        self.bnd_layer.setExceptedLayerList([main] if main is not None else [])
+        if self.bnd_layer.currentLayer() is main:
+            self.bnd_layer.setLayer(None)
+        if self.bnd_layer.currentLayer() is None:
+            for i in range(self.bnd_layer.count()):
+                lyr = self.bnd_layer.layer(i)
+                if lyr is not None and lyr is not main and "境界" in lyr.name():
+                    self.bnd_layer.setLayer(lyr)
                     break
 
     def _optional_layer(self, empty_text):
@@ -451,6 +474,11 @@ class Building3DHtmlDialog(QDialog):
                 sur = export_surroundings(sur_layer, self.sur_height.currentField(),
                                           self.default_height.value(), result.geojson(),
                                           self.sur_distance.value())
+            bnd = None
+            bnd_layer = self.bnd_layer.currentLayer()
+            if bnd_layer is not None:
+                bnd = export_boundary(bnd_layer, config["bbox"])
+                config["boundary"] = {"label": bnd_layer.name().split(" — ")[-1]}
             self.extra_lines = []
             if plan is not None:
                 self.extra_lines.append(f"計画建物：{plan['result'].count:,} 棟（半透明で表示）")
@@ -458,9 +486,12 @@ class Building3DHtmlDialog(QDialog):
                 self.extra_lines.append(
                     f"周辺の建物：{sur.count:,} 棟（{self.sur_distance.value():g} m 以内・灰色）"
                     + (f"　同じ建物のため除いた {sur.same:,} 棟" if sur.same else ""))
+            if bnd is not None:
+                self.extra_lines.append(f"境界：{bnd.count:,} 件（建物のまわりにかかるもの）")
             size = write_html(path, result.geojson(), config,
                               surroundings=sur.geojson() if sur is not None else None,
-                              plan=plan["result"].geojson() if plan is not None else None)
+                              plan=plan["result"].geojson() if plan is not None else None,
+                              boundary=bnd.geojson() if bnd is not None else None)
         except Exception as e:  # 失敗の理由をそのまま見せる
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "Building Connect & 3D Publish for PLATEAU", "書き出しに失敗しました。\n\n" + str(e))
