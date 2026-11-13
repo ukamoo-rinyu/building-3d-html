@@ -11,6 +11,7 @@ import json
 from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsCsException,
     QgsFeatureRequest,
     QgsProject,
     QgsRectangle,
@@ -22,6 +23,7 @@ from .layer_export import PRECISION, _clean_geometry
 class BoundaryResult:
     def __init__(self):
         self.features = []
+        self.skipped = 0    # 形が読めず除外した件数
 
     @property
     def count(self):
@@ -48,10 +50,13 @@ def export_boundary(layer, bbox=None, margin=0.02):
         geom = _clean_geometry(feat.geometry())
         if geom is None:
             continue
+        # 座標を変換できない・GeoJSON にできない形は飛ばして数える
+        # (EN) Skip and count shapes that cannot be transformed or converted to GeoJSON.
         try:
             geom.transform(to_wgs)
             geometry = json.loads(geom.asJson(PRECISION))
-        except Exception:
+        except (QgsCsException, ValueError):
+            result.skipped += 1
             continue
         result.features.append({"type": "Feature", "id": len(result.features),
                                 "properties": {}, "geometry": geometry})

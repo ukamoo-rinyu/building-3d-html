@@ -361,7 +361,10 @@ def _building_layer(buildings_layer, points_layer, hits, index):
             else:
                 attrs.append(items[0][1])  # 建物の中 または 敷地の中
             attrs.append(round(max(near), 1) if near else 0.0)
-            assert len(attrs) == n_b + len(point_names) + 3
+            # 列の数が合わないのはプログラムの誤り。黙って列をずらさずに止める
+            # (EN) A column count mismatch is a programming error: stop instead of shifting columns.
+            if len(attrs) != n_b + len(point_names) + 3:
+                raise RuntimeError("照合結果の列の数が合いません / result column count mismatch")
             feat.setAttributes(attrs)
             out.append(feat)
     layer.dataProvider().addFeatures(out)

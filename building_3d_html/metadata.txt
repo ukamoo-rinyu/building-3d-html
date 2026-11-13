@@ -10,11 +10,12 @@ about=This plugin has two main functions.
     MapLibre GL JS (BSD-3-Clause) is bundled in the vendor folder. The user interface is currently in Japanese.
     ---
     日本語：施設の点・敷地・住所を建物（PLATEAU など）にひも付けて地図上で確認・修正し、高さで立ち上げた 3D 地図を HTML 1ファイルに書き出します。住所から点を作る機能は、国土交通省の位置参照情報（街区レベル）の zip をご自身でダウンロードして使います（ネットの住所検索サービスは使いません）。
-version=1.0.0
+version=1.0.1
 author=りんとゆう (ukamoo-rinyu)
 email=ukamoo@gmail.com
 
-changelog=1.0.0 - First public release.
+changelog=1.0.1 - Code clean-up for the security scan: catch only specific errors when a shape cannot be converted (and count skipped shapes), replace an assert with an explicit check.
+    1.0.0 - First public release.
     - Match facilities (points or site polygons) to buildings, with a dock panel to review and fix results on the map.
     - Create points from addresses with offline MLIT Location Reference Information (block level).
     - Export a single-file 3D map HTML (extruded buildings, colours, labels, surrounding buildings, boundary lines, GSI pale map / aerial photo background).

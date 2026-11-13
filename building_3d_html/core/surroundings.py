@@ -11,6 +11,7 @@ import json
 from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
+    QgsCsException,
     QgsFeatureRequest,
     QgsGeometry,
     QgsProject,
@@ -26,6 +27,7 @@ class SurroundResult:
         self.features = []
         self.filled = 0     # 高さを既定値で補った件数
         self.same = 0       # 主の建物と同じため除いた件数
+        self.skipped = 0    # 形が読めず除外した件数
 
     @property
     def count(self):
@@ -78,9 +80,11 @@ def export_surroundings(layer, height_field, default_height, main_geojson, dista
         if geom is None:
             continue
         g_utm = QgsGeometry(geom)
+        # 座標を変換できない形は飛ばして数える (EN) skip and count shapes that cannot be transformed
         try:
             g_utm.transform(to_utm)
-        except Exception:
+        except QgsCsException:
+            result.skipped += 1
             continue
         near = index.intersects(g_utm.boundingBox().buffered(distance))
         if not near:
@@ -95,7 +99,8 @@ def export_surroundings(layer, height_field, default_height, main_geojson, dista
         try:
             geom.transform(to_wgs)
             geometry = json.loads(geom.asJson(PRECISION))
-        except Exception:
+        except (QgsCsException, ValueError):
+            result.skipped += 1
             continue
         h = _height(feat.attribute(field_idx)) if field_idx >= 0 else None
         if h is None:
