@@ -1,5 +1,7 @@
 # Building Connect & 3D Publish for PLATEAU（QGISプラグイン）
 
+[English README](README.en.md) ／ ライセンス：GPL-2.0 以上（[LICENSE](LICENSE)）
+
 QGISの面レイヤ（建物など）を、高さの列で立ち上げた **3D地図のHTML（1ファイル）** として書き出すプラグインです。
 MapLibre GL JS をHTMLに埋め込むので、ネットがなくても建物は表示されます（背景の地理院タイルだけネットが必要）。
 

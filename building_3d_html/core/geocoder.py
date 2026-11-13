@@ -1,4 +1,6 @@
 """住所から点を作る（国土交通省「位置参照情報」を使う。ネットにはつながない）。画面には依存しない。
+(EN) Offline geocoder: turns Japanese addresses into points using MLIT "Location Reference
+Information" (block level) CSV/zip files that the user downloads. No network access.
 
 位置参照情報（街区レベル）の CSV（zip のままでもよい）を読み、
   1. 「〇丁目〇番」まで一致 → 街区の代表点（一致した細かさ＝街区）

@@ -2,16 +2,32 @@
 name=Building Connect & 3D Publish for PLATEAU
 qgisMinimumVersion=3.28
 supportsQt6=True
-description=Export a polygon layer as a single-file 3D map HTML, with buildings extruded by a height field.
-about=Select a polygon layer and a height field, and this plugin writes one HTML file in which the buildings are extruded in 3D (MapLibre GL JS). The HTML works offline: MapLibre is embedded in the file, and only the GSI background tiles need a network connection. Works with PLATEAU building layers and any other polygon layer that has a height field.
-version=0.1.0-dev
-author=りんとゆう
+description=Link facility records (points, sites or addresses) to building footprints such as PLATEAU, then publish them as a single-file 3D map HTML. / 施設と建物（PLATEAU など）をひも付け、3D地図の HTML 1ファイルとして書き出します。
+about=This plugin has two main functions.
+    (1) Connect facilities to buildings: match a facility layer (points, or site polygons for facilities with several buildings) to a building polygon layer such as PLATEAU bldg_Building, then review and correct the results on the map in a dock panel. Facilities that only have an address can first be turned into points with the offline "Location Reference Information" (位置参照情報, block level) published by MLIT Japan; the user downloads these zip files from MLIT and selects the folder. No online geocoding service is used.
+    (2) 3D Publish: export a polygon layer as one self-contained HTML file in which buildings are extruded by a height field (e.g. measuredHeight) with MapLibre GL JS. Layer colours (single symbol / categorized), labels, surrounding buildings and boundary lines are carried over. The HTML can be opened in any browser and shared as a single file.
+    Network use: the plugin itself makes no network requests. The exported HTML loads background map tiles from GSI Japan (cyberjapandata.gsi.go.jp) when it is opened in a browser; buildings are shown without a network. The optional "check this place on a map" tool opens Google Maps or GSI Maps in the system web browser only when the user clicks.
+    MapLibre GL JS (BSD-3-Clause) is bundled in the vendor folder. The user interface is currently in Japanese.
+    ---
+    日本語：施設の点・敷地・住所を建物（PLATEAU など）にひも付けて地図上で確認・修正し、高さで立ち上げた 3D 地図を HTML 1ファイルに書き出します。住所から点を作る機能は、国土交通省の位置参照情報（街区レベル）の zip をご自身でダウンロードして使います（ネットの住所検索サービスは使いません）。
+version=1.0.0
+author=りんとゆう (ukamoo-rinyu)
 email=ukamoo@gmail.com
 
-changelog=0.1.0-dev - First working draft: extruded buildings, single colour, GSI pale map background.
+changelog=1.0.0 - First public release.
+    - Match facilities (points or site polygons) to buildings, with a dock panel to review and fix results on the map.
+    - Create points from addresses with offline MLIT Location Reference Information (block level).
+    - Export a single-file 3D map HTML (extruded buildings, colours, labels, surrounding buildings, boundary lines, GSI pale map / aerial photo background).
+    - Map tool to open the clicked place in Google Maps or GSI Maps.
 
-tags=3d,html,export,web,maplibre,plateau,building
+tags=3d,html,export,web,maplibre,plateau,building,matching,geocoding,japan
+homepage=https://github.com/ukamoo-rinyu/building-3d-html
+repository=https://github.com/ukamoo-rinyu/building-3d-html
+tracker=https://github.com/ukamoo-rinyu/building-3d-html/issues
 category=Web
 icon=icon.svg
-experimental=True
+experimental=False
 deprecated=False
+hasProcessingProvider=no
+server=False
+license=GPL-2.0-or-later

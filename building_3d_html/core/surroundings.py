@@ -1,4 +1,5 @@
 """周辺建物：主の建物から distance（m）以内の建物を、灰色の背景用に書き出す。画面には依存しない。
+(EN) Export nearby buildings (grey background) around the main buildings for the 3D HTML.
 
 - 高さ H だけを持たせる（属性は入れない。クリックもしない）
 - 主の建物と同じ建物（周辺建物の中の点が主の建物に入るもの）は、二重に描かないよう除く

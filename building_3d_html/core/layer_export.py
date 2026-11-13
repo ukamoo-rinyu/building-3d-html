@@ -1,4 +1,7 @@
-"""レイヤ → GeoJSON（EPSG:4326）への変換。画面には依存しない。"""
+"""レイヤ → GeoJSON（EPSG:4326）への変換。画面には依存しない。
+
+(EN) Convert a QGIS layer to GeoJSON (EPSG:4326) with height and colour per feature.
+"""
 
 import json
 

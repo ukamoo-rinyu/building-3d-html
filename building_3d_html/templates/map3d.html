@@ -49,25 +49,41 @@ h1{font-size:17px;margin:0;line-height:1.4;overflow-wrap:anywhere}
 .legend .fill{border-top:1px solid var(--line);padding-top:6px;margin-top:2px;color:var(--muted);font-size:11.5px}
 .legend .sep{border-top:1px solid var(--line);padding-top:6px;margin-top:2px}
 .sw{width:14px;height:14px;border-radius:3px;flex:none;box-shadow:inset 0 0 0 1px rgb(0 0 0 / .15)}
+/* 凡例の色：クリックで色を選び直せる（色の入力欄を色見本の上に透明で重ねる） */
+.swPick{position:relative;cursor:pointer}
+.swPick:hover{box-shadow:inset 0 0 0 1px rgb(0 0 0 / .15),0 0 0 2px var(--accent)}
+.swPick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;cursor:pointer}
 .swLine{width:14px;height:0;flex:none;border-top:2.5px dashed var(--bnd)}
 .note{font-size:11px;color:var(--muted);line-height:1.6;margin:0}
 label.chk{font-size:12.5px;display:flex;gap:6px;align-items:center;cursor:pointer}
-.side{position:absolute;top:12px;right:56px;width:300px;max-width:calc(100% - 68px);box-sizing:border-box;max-height:calc(100% - 24px);overflow:auto;
+/* 詳細パネル：項目名は狭くしすぎず、値は残り全部。長い英数字も途中で折り返す */
+.side{position:absolute;top:12px;right:56px;width:360px;max-width:calc(100% - 68px);box-sizing:border-box;max-height:calc(100% - 24px);overflow:auto;
   background:var(--panel);border:1px solid var(--line);border-top:4px solid var(--sel-line);border-radius:10px;box-shadow:0 6px 24px rgb(0 0 0 / .14);padding:14px 16px 12px}
 .side h2{font-size:15px;margin:0 24px 8px 0}
 .side .x{position:absolute;top:6px;right:8px;border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 6px;border-radius:6px}
-.side dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:12.5px}
-.side dt{color:var(--muted)}
-.side dd{margin:0;overflow-wrap:anywhere}
+.side dl{display:grid;grid-template-columns:minmax(4.5em,max-content) minmax(0,1fr);gap:5px 12px;margin:0;font-size:12.5px;line-height:1.5}
+.side dt{color:var(--muted);max-width:9.5em;overflow-wrap:anywhere}
+.side dd{margin:0;word-break:break-all}
 .dim{font:700 12px/29px var(--font-ui)!important;color:#333!important}
-/* ラベル（表示名）。クリックは下の建物に通す */
-.lb{pointer-events:none;font:700 11.5px/1.3 var(--font-ui);color:var(--ink);background:rgb(255 255 255 / .88);
-  padding:1px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 3px rgb(0 0 0 / .25);margin-bottom:4px}
+/* ラベル（表示名）：吹き出し。しっぽの先が屋上を指す。クリックは下の建物に通す */
+.labs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.lb{position:absolute;left:0;top:0;font:700 12px/1.35 var(--font-ui);color:var(--ink);background:#fff;border:1.5px solid #6b7785;border-radius:8px;
+  padding:3px 9px;white-space:nowrap;box-shadow:0 2px 6px rgb(0 0 0 / .22);will-change:transform}
+.lb .t{display:block;max-width:16em;overflow:hidden;text-overflow:ellipsis}
+.lb::before,.lb::after{content:"";position:absolute;left:50%;transform:translateX(-50%);border-style:solid;border-color:transparent}
+.lb::before{top:100%;border-width:8px 7px 0;border-top-color:#6b7785}
+.lb::after{top:calc(100% - 1px);border-width:6.5px 5.5px 0;border-top-color:#fff}
+.lb.on{border-color:var(--sel-line);background:#fff8d6}
+.lb.on::before{border-top-color:var(--sel-line)}
+.lb.on::after{border-top-color:#fff8d6}
+/* 撮影モードで建物に寄っているとき、ほかの施設のラベルは小さく薄く */
+body.touring .lb:not(.on){opacity:.5;font-size:10px;padding:2px 6px;border-color:#aab4bf;box-shadow:none}
 button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 </style>
 </head>
 <body>
 <div id="map" role="application" aria-label="建物の3D地図"></div>
+<div class="labs" id="labs" aria-hidden="true"></div>
 
 <div class="panel" id="panel">
   <div class="sec">
@@ -131,23 +147,53 @@ $('count').textContent = DATA.features.length.toLocaleString() + ' 棟' + (nFill
 // 凡例（QGIS の色分けの名前・色と、書き出した件数）
 const sw = (color, op) => '<span class="sw" style="background:' + esc(color) + (op ? ';opacity:' + op : '') + '"></span>';
 $('legend').innerHTML =
-  CFG.legend.map(it => '<div>' + sw(it.color) + '<span>' + esc(it.label) + '</span><span class="cnt">' + it.count.toLocaleString() + '</span></div>').join('') +
+  CFG.legend.map(it => '<div>' + (/^#[0-9a-f]{6}$/i.test(it.color)
+    ? '<label class="sw swPick" title="クリックで色を変える" style="background:' + esc(it.color) + '"><input type="color" value="' + esc(it.color.toLowerCase()) +
+      '" data-orig="' + esc(it.color) + '" aria-label="' + esc(it.label) + 'の色"></label>'
+    : sw(it.color)) + '<span>' + esc(it.label) + '</span><span class="cnt">' + it.count.toLocaleString() + '</span></div>').join('') +
   (nFill ? '<div class="fill">' + sw(CFG.legend.length === 1 ? CFG.legend[0].color : '#9aa5b1', .45) + '半透明：高さが空のため ' + esc(CFG.defaultHeight) + ' m で表示</div>' : '') +
   (PLAN.features.length ? '<div class="sep">' + sw(PCFG.color, .55) + '<span>計画建物</span><span class="cnt">' + PLAN.features.length.toLocaleString() + '</span></div>' : '') +
   (SUR.features.length ? '<div' + (PLAN.features.length ? '' : ' class="sep"') + '>' + sw(css('--sur')) + '<span>周辺の建物</span><span class="cnt">' + SUR.features.length.toLocaleString() + '</span></div>' : '') +
   (BND.features.length ? '<div' + (PLAN.features.length || SUR.features.length ? '' : ' class="sep"') + '><span class="swLine"></span><span>' + esc(BCFG.label || '境界') + '</span></div>' : '');
-// ラベルを出す建物（表示名があるもの）。位置は形の頂点の平均（小さな建物なら中ほど）
+// 建物の色。凡例で選び直した色（元の色 → 新しい色）があれば、それに置き換える
+const colorMap = {};
+function cExpr() {
+  const pairs = Object.entries(colorMap).filter(([a, b]) => a.toLowerCase() !== b.toLowerCase());
+  return pairs.length ? ['match', ['get', 'C'], ...pairs.flat(), ['get', 'C']] : ['get', 'C'];
+}
+// ラベルを出す建物（表示名があるもの）。位置はいちばん大きい面の外周の重心（屋上の中ほど）
 const hasName = p => CFG.nameKey && p[CFG.nameKey] != null && p[CFG.nameKey] !== '';
-const LABELS = CFG.labels ? DATA.features.filter(f => hasName(f.properties)).map(f => {
-  const g = f.geometry, ring = (g.type === 'Polygon' ? g.coordinates : g.coordinates[0])[0];
-  let x = 0, y = 0;
-  for (let i = 0; i < ring.length - 1; i++) { x += ring[i][0]; y += ring[i][1]; }
-  const n = Math.max(1, ring.length - 1);
-  return {name: String(f.properties[CFG.nameKey]), at: [x / n, y / n]};
+const labPts = CFG.labels ? DATA.features.filter(f => hasName(f.properties)).map(f => {
+  const g = f.geometry, polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let best = null, area = -1;
+  for (const poly of polys) {
+    // 経度・緯度のままだと桁落ちで重心がずれるので、最初の頂点からの差で計算する
+    const r = poly[0], x0 = r[0][0], y0 = r[0][1]; let a = 0, cx = 0, cy = 0;
+    for (let i = 0; i < r.length - 1; i++) {
+      const xa = r[i][0] - x0, ya = r[i][1] - y0, xb = r[i + 1][0] - x0, yb = r[i + 1][1] - y0;
+      const c = xa * yb - xb * ya;
+      a += c; cx += (xa + xb) * c; cy += (ya + yb) * c;
+    }
+    if (Math.abs(a) > area) { area = Math.abs(a); best = a ? [x0 + cx / (3 * a), y0 + cy / (3 * a)] : r[0]; }
+  }
+  const mc = maplibregl.MercatorCoordinate.fromLngLat(best, 0);
+  return {id: f.id, name: String(f.properties[CFG.nameKey]), H: +f.properties.H || 0, area,
+          mx: mc.x, my: mc.y, mu: mc.meterInMercatorCoordinateUnits(), el: null, w: 0, h: 0, on: false, dup: false};
 }) : [];
-if (LABELS.length || PLAN.features.length || SUR.features.length || BND.features.length) {
+// 同じ名前の建物が近く（LAB_SAME m 以内）にあるとき（1つの施設に何棟も当てたときなど）は、
+// いちばん大きい建物にだけラベルを出す。ほかの棟も、選んだときは出す
+const LAB_SAME = 300;
+{
+  const kept = {};  // 名前 → ラベルを出す建物
+  for (const p of [...labPts].sort((u, v) => v.area - u.area)) {
+    const list = kept[p.name] || (kept[p.name] = []);
+    p.dup = list.some(q => Math.hypot(p.mx - q.mx, p.my - q.my) / p.mu < LAB_SAME);
+    if (!p.dup) list.push(p);
+  }
+}
+if (labPts.length || PLAN.features.length || SUR.features.length || BND.features.length) {
   $('showSec').hidden = false;
-  $('lbChkRow').hidden = !LABELS.length;
+  $('lbChkRow').hidden = !labPts.length;
   $('planChkRow').hidden = !PLAN.features.length;
   $('surChkRow').hidden = !SUR.features.length;
   $('bndChkRow').hidden = !BND.features.length;
@@ -160,6 +206,19 @@ function fitLegend() {
 }
 addEventListener('resize', fitLegend);
 fitLegend();
+// 色を選ぶ間は何度も呼ばれるので、地図の色の付け直しは1フレームに1回まで
+let recolorQ = 0;
+document.querySelectorAll('.swPick input').forEach(inp => inp.oninput = () => {
+  colorMap[inp.dataset.orig] = inp.value;
+  inp.parentNode.style.background = inp.value;
+  const fill = document.querySelector('.legend .fill .sw');  // 色分けが1つのときは「高さを補った建物」の見本も同じ色
+  if (fill && CFG.legend.length === 1) fill.style.background = inp.value;
+  cancelAnimationFrame(recolorQ);
+  recolorQ = requestAnimationFrame(() => {
+    for (const id of ['bx', 'bxFill']) map.setPaintProperty(id, 'fill-extrusion-color',
+      ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), cExpr()]);
+  });
+});
 $('legendHead').onclick = () => {
   const open = $('legend').hidden;
   $('legend').hidden = !open;
@@ -225,9 +284,7 @@ const map = new maplibregl.Map({
   container: 'map',
   bounds: CFG.bbox,
   fitBoundsOptions: {padding: 60},
-  maxPitch: 70,
-  dragRotate: false,          // 北を上に固定
-  pitchWithRotate: false,
+  maxPitch: 80,               // 右ドラッグ（Ctrl＋ドラッグ）で回転・傾き
   attributionControl: false,
   style: {
     version: 8,
@@ -252,11 +309,11 @@ const map = new maplibregl.Map({
        paint: {'fill-extrusion-color': css('--sur'), 'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .85}},
       // 高さのある建物
       {id: 'bx', type: 'fill-extrusion', source: 'b', filter: ['!', ['has', 'Hfill']],
-       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), ['get', 'C']],
+       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), cExpr()],
                'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .92, 'fill-extrusion-vertical-gradient': true}},
       // 高さを補った建物（半透明）
       {id: 'bxFill', type: 'fill-extrusion', source: 'b', filter: ['has', 'Hfill'],
-       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), ['get', 'C']],
+       paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), cExpr()],
                'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .45}},
       // 輪郭線（屋根のふち）。選んだ建物は強調色
       {id: 'rim', type: 'fill-extrusion', source: 'rim',
@@ -266,17 +323,12 @@ const map = new maplibregl.Map({
       {id: 'planX', type: 'fill-extrusion', source: 'plan',
        paint: {'fill-extrusion-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel'), PCFG.color || '#e4572e'],
                'fill-extrusion-height': hExpr(), 'fill-extrusion-opacity': .55}},
-      // 選んだ建物の輪郭（地面）
-      {id: 'selLine', type: 'line', source: 'b', filter: ['==', ['id'], -1],
-       paint: {'line-color': css('--sel-line'), 'line-width': 3}},
       {id: 'planLine', type: 'line', source: 'plan',
        paint: {'line-color': ['case', ['boolean', ['feature-state', 'sel'], false], css('--sel-line'), PCFG.color || '#e4572e'],
                'line-width': ['case', ['boolean', ['feature-state', 'sel'], false], 3, 1.5], 'line-dasharray': [2, 1]}}
     ]
   }
 });
-map.touchZoomRotate.disableRotation();
-map.keyboard.disableRotation();
 map.once('load', () => map.easeTo({pitch: PITCH_3D, duration: 0}));
 
 // ズームが変わったら帯の幅を作り直す（幅が2割以上変わるときだけ）
@@ -292,7 +344,7 @@ function updateRims() {
 map.on('styledata', updateRims);  // 背景の読み込み完了（load）を待たずに作る
 map.on('zoomend', updateRims);
 
-map.addControl(new maplibregl.NavigationControl({showCompass: false}), 'top-right');
+map.addControl(new maplibregl.NavigationControl({showCompass: true, visualizePitch: true}), 'top-right');
 
 // 2D／3D 切り替え
 class DimControl {
@@ -303,7 +355,8 @@ class DimControl {
     b.type = 'button'; b.className = 'dim';
     const upd = () => { const is3 = m.getPitch() > 5; b.textContent = is3 ? '2D' : '3D';
       b.title = is3 ? '真上から見る（2D）' : '斜めから見る（3D）'; b.setAttribute('aria-label', b.title); };
-    b.onclick = () => m.easeTo({pitch: m.getPitch() > 5 ? 0 : PITCH_3D, bearing: 0, duration: 600});
+    // 2Dにするときは北を上に戻す。3Dにするときは今の向きのまま傾ける
+    b.onclick = () => m.getPitch() > 5 ? m.easeTo({pitch: 0, bearing: 0, duration: 600}) : m.easeTo({pitch: PITCH_3D, duration: 600});
     m.on('pitchend', upd); upd();
     box.appendChild(b); return box;
   }
@@ -356,35 +409,71 @@ $('surChk').onchange = e => map.setLayoutProperty('surX', 'visibility', e.target
 $('bndChk').onchange = e => {
   for (const id of ['bndCase', 'bndLine']) map.setLayoutProperty(id, 'visibility', e.target.checked ? 'visible' : 'none');
 };
-// ラベル：画面に入っているものだけを、ほかのラベルと重ならないものから順に出す（最大 LABEL_MAX 件）。
-// 重なるものは出さないので、ズームインすると出るラベルが増える。
-// 件数が多いとき（LABEL_MAX 超）は、ズーム LABEL_ZOOM 以上になってから出す
-const LABEL_ZOOM = 15, LABEL_MAX = 300, LABEL_GAP = 4;
-const shown = new Map();  // LABELS の番号 → Marker
-function updateLabels() {
-  const want = new Set();
-  if ($('lbChk').checked && (LABELS.length <= LABEL_MAX || map.getZoom() >= LABEL_ZOOM)) {
-    const b = map.getBounds(), boxes = [];
-    for (let i = 0; i < LABELS.length && want.size < LABEL_MAX; i++) {
-      if (!b.contains(LABELS[i].at)) continue;
-      // 画面上の大きさの見積もり（1文字 約12px、高さ 18px。点の上に出す）
-      const pt = map.project(LABELS[i].at), w = LABELS[i].name.length * 12 + 12;
-      const box = [pt.x - w / 2 - LABEL_GAP, pt.y - 22 - LABEL_GAP, pt.x + w / 2 + LABEL_GAP, pt.y + LABEL_GAP];
-      if (boxes.some(o => box[0] < o[2] && o[0] < box[2] && box[1] < o[3] && o[1] < box[3])) continue;
-      boxes.push(box);
-      want.add(i);
-    }
+// ---- ラベル（吹き出し） ----
+// 屋上の中心の真上に出し、しっぽの先で屋上を指す（引き出し線は使わない）。
+// ほかの吹き出しと重なるものは出さないので、ズームインすると増える（選んだ建物は重なっても出す）。
+// 出すかどうかは地図が止まったときに決め直す（動かしている間は建物について動く）。
+// 数が多いときは画面に見えている建物だけ（最大 LAB_MAX 件）
+const LAB_MAX = 300, LAB_TAIL = 8, LAB_PAD = 3;
+// 屋上の中心が画面のどこに見えるか（高さの強調も反映）
+function roofPx(p) {
+  const m = map.transform.customLayerMatrix(), x = p.mx, y = p.my, z = p.H * exag * p.mu;
+  const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+  if (cw <= 0) return null;
+  const cx = (m[0] * x + m[4] * y + m[8] * z + m[12]) / cw, cy = (m[1] * x + m[5] * y + m[9] * z + m[13]) / cw;
+  const c = map.getCanvas();
+  return [(cx + 1) / 2 * c.clientWidth, (1 - cy) / 2 * c.clientHeight];
+}
+function layoutLabels() {
+  const c = map.getCanvas(), W = c.clientWidth, H = c.clientHeight, show = $('lbChk').checked;
+  const cand = [];
+  for (const p of labPts) {
+    p.picked = !!sel && sel.src === 'b' && sel.id === p.id;
+    const a = show && (!p.dup || p.picked) ? roofPx(p) : null;
+    p.on = !!a && a[0] > -50 && a[0] < W + 50 && a[1] > -50 && a[1] < H + 50;
+    if (p.on) { p.a = a; cand.push(p); }
   }
-  for (const [i, m] of shown) if (!want.has(i)) { m.remove(); shown.delete(i); }
-  for (const i of want) if (!shown.has(i)) {
-    const el = document.createElement('div');
-    el.className = 'lb';
-    el.textContent = LABELS[i].name;
-    shown.set(i, new maplibregl.Marker({element: el, anchor: 'bottom'}).setLngLat(LABELS[i].at).addTo(map));
+  // 選んだ建物を先に、あとは手前（画面の下）の建物から置く
+  cand.sort((u, v) => (v.picked - u.picked) || (v.a[1] - u.a[1]));
+  cand.slice(LAB_MAX).forEach(p => p.on = false);
+  // 操作パネル・凡例・詳細・右上のボタンの下には置かない
+  const placed = [$('panel'), document.querySelector('.legendBox'), $('side'), document.querySelector('.maplibregl-ctrl-top-right')]
+    .filter(e => e && !e.hidden).map(e => { const r = e.getBoundingClientRect(); return [r.left - 4, r.top - 4, r.right + 4, r.bottom + 4]; });
+  const hit = r => placed.some(q => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]);
+  for (const p of cand.slice(0, LAB_MAX)) {
+    if (!p.el) {
+      p.el = document.createElement('div'); p.el.className = 'lb';
+      const t = document.createElement('span'); t.className = 't'; t.textContent = p.name;
+      p.el.title = p.name; p.el.appendChild(t);
+      $('labs').appendChild(p.el);
+    }
+    p.el.classList.toggle('on', p.picked);
+    p.el.hidden = false;
+    p.w = p.el.offsetWidth; p.h = p.el.offsetHeight + LAB_TAIL;
+    const x0 = p.a[0] - p.w / 2, y0 = p.a[1] - p.h;
+    const r = [x0 - LAB_PAD, y0 - LAB_PAD, x0 + p.w + LAB_PAD, y0 + p.h];
+    if (!p.picked && hit(r)) { p.on = false; continue; }
+    placed.push(r);
+  }
+  drawLabels();
+}
+// 吹き出しを今の位置に描く（地図が動くたびに呼ぶ）。しっぽの先が屋上の中心
+function drawLabels() {
+  for (const p of labPts) {
+    if (!p.el) continue;
+    const a = p.on ? roofPx(p) : null;
+    p.el.hidden = !a;
+    if (!a) continue;
+    p.el.style.transform = 'translate(' + (a[0] - p.w / 2).toFixed(1) + 'px,' + (a[1] - p.h).toFixed(1) + 'px)';
   }
 }
-if (LABELS.length) { map.on('load', updateLabels); map.on('moveend', updateLabels); }
-$('lbChk').onchange = updateLabels;
+if (labPts.length) {
+  map.on('load', layoutLabels);
+  map.on('moveend', layoutLabels);
+  map.on('render', drawLabels);
+  addEventListener('resize', () => setTimeout(layoutLabels, 50));
+}
+$('lbChk').onchange = layoutLabels;
 $('bmOp').oninput = e => {
   if (bmNow === 'none') return;
   bmOpacity[bmNow] = +e.target.value;
@@ -392,7 +481,8 @@ $('bmOp').oninput = e => {
   map.setPaintProperty(bmNow, 'raster-opacity', bmOpacity[bmNow] / 100);
 };
 
-// クリックで選択・詳細パネル
+// ---- 選択・詳細パネル ----
+// クリックで1棟を選ぶ（もう一度クリックで解除）
 let sel = null;  // {src: 'b'（主の建物）か 'plan'（計画建物）, id}
 function setSel(state) {
   map.setFeatureState({source: sel.src, id: sel.id}, {sel: state});
@@ -401,15 +491,14 @@ function setSel(state) {
 function clearSel() {
   if (sel) setSel(false);
   sel = null;
-  map.setFilter('selLine', ['==', ['id'], -1]);
   $('side').hidden = true;
+  if (labPts.length) layoutLabels();
 }
 function pick(f, src) {
   if (sel && sel.src === src && sel.id === f.id) { clearSel(); return; }   // もう一度クリックで解除
-  clearSel();
+  if (sel) setSel(false);
   sel = {src, id: f.id};
   setSel(true);
-  if (src === 'b') map.setFilter('selLine', ['==', ['id'], f.id]);
   const p = f.properties, c = src === 'b' ? CFG : PCFG;
   // 詳細の列（項目名は別名）。値が空なら「—」。最後に3D表示に使った高さを足す
   const rows = (c.columns || []).map(([key, label]) => [label, p[key] == null || p[key] === '' ? '—' : p[key]]);
@@ -420,6 +509,7 @@ function pick(f, src) {
     '<h2>' + esc(name) + '</h2><dl>' +
     rows.map(r => '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>').join('') + '</dl>';
   $('side').hidden = false;
+  if (labPts.length) layoutLabels();  // 選んだ建物の吹き出しを強調する
 }
 // 計画建物を先に受け付ける（半透明で、ふつうの建物の手前や中にあることが多いため）
 map.on('click', 'planX', e => { e.preventDefault(); pick(e.features[0], 'plan'); });
@@ -433,6 +523,446 @@ for (const id of ['bx', 'bxFill']) {
 map.on('click', e => { if (!e.defaultPrevented) clearSel(); });
 $('sideX').onclick = clearSel;
 addEventListener('keydown', e => { if (e.key === 'Escape') clearSel(); });
+</script>
+<script>
+// ---- 撮影モード（紹介ムービー） ----
+// パネルのボタンか T キーで始める。操作パネルなどを隠して、決まった順番でカメラと建物を動かす。
+// 画面を録画すれば、そのまま紹介動画になる。Shift＋T は字幕なし。Esc で止めて元の表示に戻る。
+// 1回目は背景地図の読み込みで画面が粗くなるので、1回通してから録画するときれいに撮れる。
+// 字幕や説明の画面（カード）は、このスクリプトより前で window.TOUR_STORY に入れておくと差し替えられる（下の STORY を参照）
+(() => {
+// 物語：intro・outro は全画面の説明カード {k: 小見出し, t: 見出し, s: 説明, chips: [...], f: 一番下の小さな文字}。
+// tilt・beams・layers・end は場面ごとの字幕 [見出し, 説明]。layers を空にするとレイヤー切り替えの場面を飛ばす。
+// visitNote は建物に寄ったときの字幕の説明に足す一言。visits は寄る施設の数、visitMs は1か所で回り込む長さ（ミリ秒）。
+// visitGroups を入れると、寄ったときの詳細パネルを列のまとまりごとに見せ、順に光らせる：
+//   [{label: 'まとまりの見出し', cols: ['列名', …], say: '光らせるときの字幕の説明'}, …]。visitJoin は最後に全部を光らせるときの字幕
+// visitNames に施設名（表示名の一部でよい）を並べると、その施設に順に寄る。足りない分は自動で選ぶ。
+// orbit は傾けるときに一緒に回る角度（360 で一周）、tiltMs はその長さ（ミリ秒）。
+// recolor は、光が下りて全部同じ色（linkColor）になったあと、本来の色分けに塗り替えるときの字幕 [見出し, 説明]
+// beamMs は光の柱が下りる長さ、recolorMs は色分けに塗り替える長さ（ミリ秒）
+const STORY = Object.assign({
+  visits: 3, visitMs: 7000, visitGroups: null, visitJoin: '', visitNames: [],
+  orbit: 0, tiltMs: 6000, linkColor: '#4cc9ff', beamMs: 8000, recolorMs: 4000,
+  recolor: ['色分けをそのまま3Dに', ''],
+  intro: [], outro: [],
+  tilt: ['PLATEAU の3D都市モデル', ''],
+  beams: ['ひも付いた建物', DATA.features.length.toLocaleString() + ' 棟'],
+  layers: null, visitNote: '',
+  end: ['Building Connect & 3D Publish for PLATEAU', '']
+}, window.TOUR_STORY || {});
+if (!STORY.recolor[1]) STORY.recolor = [STORY.recolor[0], CFG.legend.slice(0, 4).map(l => l.label).join('・')];
+const st = document.createElement('style');
+st.textContent = `
+body.touring .panel,body.touring .legendBox,body.touring .side .x,body.touring .maplibregl-ctrl-top-right{display:none!important}
+body.touring.tourLegend .legendBox{display:flex!important}
+body.touring .side{right:12px}
+.tourCover{position:absolute;inset:0;cursor:none;z-index:5}
+.tourFade{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 1.4s;z-index:6}
+.cap{position:absolute;left:50%;bottom:64px;transform:translate(-50%,12px);max-width:calc(100% - 48px);box-sizing:border-box;text-align:center;
+  padding:14px 30px 16px;border-radius:12px;background:rgb(16 24 34 / .72);color:#fff;opacity:0;transition:opacity .6s,transform .6s;pointer-events:none;z-index:7}
+.cap.show{opacity:1;transform:translate(-50%,0)}
+.cap b{display:block;font-size:30px;line-height:1.35;letter-spacing:.04em}
+.cap span{display:block;font-size:17px;margin-top:4px;opacity:.85}
+.cap span:empty{display:none}
+.tcard{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:0 8%;box-sizing:border-box;
+  text-align:center;background:rgb(10 16 24 / .66);color:#fff;opacity:0;transition:opacity .9s;pointer-events:none;z-index:7}
+.tcard.show{opacity:1}
+.tcard .k{font-size:clamp(13px,1.1vw,20px);letter-spacing:.22em;opacity:.8}
+.tcard h2{font-size:clamp(24px,3vw,56px);line-height:1.4;margin:0;letter-spacing:.04em;white-space:pre-line}
+.tcard p{font-size:clamp(15px,1.45vw,27px);line-height:1.6;margin:0;opacity:.92;white-space:pre-line}
+.tcard .chips{display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin-top:6px}
+.tcard .chips span{font-size:clamp(14px,1.3vw,24px);padding:7px 20px;border:1.5px solid rgb(255 255 255 / .7);border-radius:999px}
+.tcard .f{position:absolute;bottom:36px;left:0;right:0;font-size:16px;letter-spacing:.14em;opacity:.75}
+.tcard :empty{display:none}
+body.touring.tourPanel .panel{display:block!important}
+body.touring .tourSec{display:none}
+.tourHi{border-radius:6px;box-shadow:0 0 0 3px var(--sel);background:#fff8d6;transition:box-shadow .4s,background .4s}
+body.touring .side{width:420px;font-size:14px}
+.tgrp{border:1.5px solid var(--line);border-radius:8px;padding:8px 12px 10px;margin-top:10px;transition:border-color .5s,background .5s,box-shadow .5s}
+.tgrp h4{margin:0 0 6px;font-size:11.5px;letter-spacing:.08em;color:var(--muted)}
+.tgrp dl{font-size:14px}
+.tgrp.hi{border-color:var(--sel-line);background:#fff8d6;box-shadow:0 0 0 3px rgb(209 0 111 / .14)}
+.tgrp.hi h4{color:var(--sel-line)}
+.tourBtn{font:inherit;font-size:13px;font-weight:700;padding:7px;border:0;border-radius:7px;background:var(--accent);color:var(--panel);cursor:pointer}
+`;
+document.head.appendChild(st);
+const sec = document.createElement('div');
+sec.className = 'sec tourSec';
+// 場面の名前（途中の場面から始めるときの選択肢）
+const SCENES = ['はじめから', '真上から（境界）', '3Dに傾ける', '光の柱', 'レイヤーの切り替え', '施設に寄る', '全体を見渡して終わる'];
+sec.innerHTML = '<span class="lbl">紹介ムービー</span>' +
+  '<div class="row"><span class="note">始める場面</span><select id="tourFrom" aria-label="始める場面" style="flex:1;font:inherit;font-size:12.5px;padding:4px">' +
+  SCENES.map((s, i) => '<option value="' + i + '">' + (i + 1) + '. ' + s + '</option>').join('') + '</select></div>' +
+  '<button type="button" class="tourBtn" id="tourBtn">▶ 自動で見せる（撮影モード）</button>' +
+  '<p class="note">T キーでも始まります（Shift＋T で字幕なし）。数字キー 1〜7 でその場面から始まります。Esc で止めます。' +
+  '画面を録画すると紹介動画になります。先に建物を1つ選んでおくと、その建物にも寄ります。</p>';
+$('panel').appendChild(sec);
+fitLegend();
+const cover = document.createElement('div'); cover.className = 'tourCover'; cover.hidden = true;
+const fade = document.createElement('div'); fade.className = 'tourFade';
+const capEl = document.createElement('div'); capEl.className = 'cap'; capEl.setAttribute('aria-live', 'polite');
+const capB = document.createElement('b'), capS = document.createElement('span');
+capEl.append(capB, capS);
+const cardEl = document.createElement('div'); cardEl.className = 'tcard';
+document.body.append(cover, fade, capEl, cardEl);
+
+const STOP = {};
+let run = 0, saved = null, capOn = true, capT = 0;
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const lerp = (a, b, t) => a + (b - a) * t;
+// ms ミリ秒かけて fn(なめらかな進み具合, 一定の進み具合) を毎フレーム呼ぶ。止めたら STOP で抜ける
+function anim(ms, fn) {
+  const my = run;
+  return new Promise((ok, ng) => {
+    const t0 = performance.now();
+    const step = now => {
+      if (my !== run) return ng(STOP);
+      const t = Math.min(1, (now - t0) / ms);
+      fn(ease(t), t);
+      t < 1 ? requestAnimationFrame(step) : ok();
+    };
+    requestAnimationFrame(step);
+  });
+}
+const wait = ms => anim(ms, () => {});
+// カメラを ms ミリ秒かけて動かす。動かすのは地図自身に任せる（毎フレーム位置を指定すると、
+// そのたびに「動き終わった」扱いになってラベルの並べ直しなどが走り、重くなる）
+function cam(opt, ms, linear) {
+  const my = run;
+  return new Promise((ok, ng) => {
+    map.once('moveend', () => my === run ? ok() : ng(STOP));
+    map.easeTo({...opt, duration: ms, easing: linear ? (t => t) : ease, essential: true});
+  });
+}
+function fly(opt) {
+  const my = run;
+  return new Promise((ok, ng) => {
+    map.once('moveend', () => my === run ? ok() : ng(STOP));
+    map.flyTo({...opt, essential: true});  // essential：OS の「動きを減らす」設定でも動かす
+  });
+}
+// 字幕。出ているときは一度消してから入れ替える
+function cap(title, sub) {
+  clearTimeout(capT);
+  const was = capEl.classList.contains('show');
+  capEl.classList.remove('show');
+  if (!title || !capOn) return;
+  capT = setTimeout(() => { capB.textContent = title; capS.textContent = sub || ''; capEl.classList.add('show'); }, was ? 650 : 0);
+}
+
+// 全画面の説明カードを ms ミリ秒出す（字幕なしのときは出さない）
+async function card(c, ms) {
+  if (!capOn) return;
+  cardEl.innerHTML = '<div class="k"></div><h2></h2><p></p><div class="chips"></div><div class="f"></div>';
+  cardEl.querySelector('.k').textContent = c.k || '';
+  cardEl.querySelector('h2').textContent = c.t || '';
+  cardEl.querySelector('p').textContent = c.s || '';
+  cardEl.querySelector('.f').textContent = c.f || '';
+  for (const x of c.chips || []) { const s = document.createElement('span'); s.textContent = x; cardEl.querySelector('.chips').appendChild(s); }
+  cardEl.classList.add('show');
+  await wait(ms || 5000);
+  if (c.keep) return;
+  cardEl.classList.remove('show');
+  await wait(900);
+}
+// 最後のカード（keepLast のとき）は消さずに残す（動画の終わりの画面になる）
+async function cards(list, keepLast) {
+  for (let i = 0; i < list.length; i++) {
+    if (keepLast && i === list.length - 1) { await card({...list[i], keep: true}, list[i].ms); return; }
+    await card(list[i], list[i].ms);
+  }
+}
+
+// 中心に近い建物から順に光らせるため、主の建物を地図の中心からの距離で BEAM_G 組に分け、組の番号を _g に入れる（最初の1回だけ）
+const BEAM_G = 8;
+let groupDone = false;
+function addGroups() {
+  if (groupDone) return;
+  groupDone = true;
+  const [x1, y1, x2, y2] = CFG.bbox, cx = (x1 + x2) / 2, cy = (y1 + y2) / 2, k = Math.cos(cy * Math.PI / 180);
+  const d = f => {
+    const g = f.geometry, p = g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0][0];
+    return Math.hypot((p[0] - cx) * k, p[1] - cy);
+  };
+  const order = [...DATA.features].sort((u, v) => d(u) - d(v));
+  order.forEach((f, i) => f.properties._g = Math.floor(i * BEAM_G / order.length));
+  map.getSource('b').setData(DATA);
+}
+const isSel = ['boolean', ['feature-state', 'sel'], false];
+// ---- 光の柱 ----
+// 主の建物へ、中心に近い組から順に、空（BEAM_L m）から白い光の柱が下りてくる。
+// 柱の下の端が地面まで届くと（建物の中の部分は建物に隠れて、屋上に光が届いたように見える）、その建物が色付き、
+// そのあと上の端も下りてきて、光は建物に吸い込まれるように消える。上ほど薄く見えるよう、柱を BEAM_OP の段数に分けて段ごとの濃さを変える。
+// 動かす値はすべて組ごとの決まった数（建物ごとの式にしない）。建物ごとの式を毎フレーム変えると
+// 地図が建物を作り直して重くなり、カクカクするため
+const BEAM_L = 300, BEAM_W = .4, BEAM_OP = [.9, .6, .35, .15], BEAM_C = '#ffffff';
+// 白い光が目立つよう、光の柱の間は街と航空写真を夕方のように暗くする（DIM まで）
+const DIM = {sur: '#7d8590', photo: .55};
+const mixHex = (a, b, t) => '#' + [1, 3, 5].map(i => Math.round(lerp(parseInt(a.substr(i, 2), 16), parseInt(b.substr(i, 2), 16), t))
+  .toString(16).padStart(2, '0')).join('');
+function dim(t) {
+  map.setPaintProperty('surX', 'fill-extrusion-color', mixHex(css('--sur'), DIM.sur, t));
+  if (map.getLayer('photo')) map.setPaintProperty('photo', 'raster-brightness-max', lerp(1, DIM.photo, t));
+  for (const f of DATA.features) map.setFeatureState({source: 'b', id: f.id}, {dim: t});
+}
+const beamId = (g, k) => 'tourBeam' + g + '_' + k;
+function addBeams() {
+  if (map.getSource('tourBeam')) return;
+  map.addSource('tourBeam', {type: 'geojson', data: {type: 'FeatureCollection', features: DATA.features.map(f =>
+    ({type: 'Feature', geometry: f.geometry, properties: {_g: f.properties._g}}))}});
+  for (let g = 0; g < BEAM_G; g++) BEAM_OP.forEach((op, k) => map.addLayer({id: beamId(g, k), type: 'fill-extrusion', source: 'tourBeam',
+    filter: ['==', ['get', '_g'], g], layout: {visibility: 'none'},
+    paint: {'fill-extrusion-color': BEAM_C, 'fill-extrusion-opacity': op, 'fill-extrusion-vertical-gradient': false,
+            'fill-extrusion-base': 0, 'fill-extrusion-height': 0}}));
+}
+function showBeams(on) {
+  for (let g = 0; g < BEAM_G; g++) BEAM_OP.forEach((_, k) => {
+    if (map.getLayer(beamId(g, k))) map.setLayoutProperty(beamId(g, k), 'visibility', on ? 'visible' : 'none');
+  });
+}
+const clamp01 = x => Math.max(0, Math.min(1, x));
+const smooth01 = x => { const u = clamp01(x); return u * u * (3 - 2 * u); };
+// 組 g の進み具合（0〜1）。T は場面全体の進み具合（0〜1）
+const beamS = (T, g) => clamp01((T - g / (BEAM_G - 1) * (1 - BEAM_W)) / BEAM_W);
+function beams(T) {
+  for (let g = 0; g < BEAM_G; g++) {
+    const s = beamS(T, g), base = BEAM_L * (1 - smooth01(s / .45)), top = BEAM_L * (1 - smooth01((s - .6) / .4));
+    BEAM_OP.forEach((op, k) => {
+      // 厚みがないときも上の面だけは描かれて、白い板が地面や空に残って見えるので消す
+      map.setPaintProperty(beamId(g, k), 'fill-extrusion-opacity', top - base > 1 ? op : 0);
+      map.setPaintProperty(beamId(g, k), 'fill-extrusion-base', base + (top - base) * k / BEAM_OP.length);
+      map.setPaintProperty(beamId(g, k), 'fill-extrusion-height', base + (top - base) * (k + 1) / BEAM_OP.length);
+    });
+    setLit(g, s >= .42 ? 1 : 0);
+  }
+}
+// 光が届いたあと、施設の種類（凡例の並び）ごとに順に、白く光ってから（lit 3）本来の色分けへ塗り替える（T は 0〜1）。
+// 種類ごとにまとめて塗るので、色が街のあちこちにばらばらに付かない
+let catOf = null, catNow = [];
+function recolor(T) {
+  const n = Math.max(1, CFG.legend.length);
+  if (!catOf) catOf = new Map(CFG.legend.map((l, i) => [String(l.color).toLowerCase(), i]));
+  for (let i = 0; i < n; i++) {
+    const a = i / n * .85, st = T >= a + .12 ? 2 : T >= a ? 3 : 1;
+    if (catNow[i] === st) continue;
+    catNow[i] = st;
+    for (const f of DATA.features) if ((catOf.get(String(f.properties.C).toLowerCase()) ?? n - 1) === i) map.setFeatureState({source: 'b', id: f.id}, {lit: st});
+  }
+}
+let litNow = [];
+function setLit(g, st) {
+  if (litNow[g] === st) return;
+  litNow[g] = st;
+  for (const f of DATA.features) if (f.properties._g === g) map.setFeatureState({source: 'b', id: f.id}, {lit: st});
+}
+// 主の建物の色：はじめは周辺の建物と同じ灰色（dim で暗くなる）。光が届くと全部同じ色（lit 1、STORY.linkColor）になり、
+// そのあと本来の色分けになる（lit 2）。
+// 式は最初に1回だけ入れて、あとは建物ごとの状態（feature-state）を変える。式を変えると地図が建物を作り直して、一瞬止まるため
+function paintC() {
+  const st = k => ['coalesce', ['feature-state', k], 0];
+  const c = ['case', isSel, css('--sel'), ['==', st('lit'), 2], ['to-color', cExpr()], ['==', st('lit'), 1], ['to-color', STORY.linkColor], ['==', st('lit'), 3], ['to-color', '#ffffff'],
+    ['interpolate', ['linear'], st('dim'), 0, ['to-color', css('--sur')], 1, ['to-color', DIM.sur]]];
+  for (const id of ['bx', 'bxFill']) map.setPaintProperty(id, 'fill-extrusion-color', c);
+}
+
+// 寄ったときの詳細パネル：STORY.visitGroups の列のまとまりごとに見せる。値が空の列は出さない
+function showGroups(pr) {
+  const label = k => ((CFG.columns || []).find(c => c[0] === k) || [k, k])[1];
+  const out = [];
+  const name = hasName(pr) ? pr[CFG.nameKey] : '建物';
+  $('sideBody').innerHTML = '<h2>' + esc(name) + '</h2>';
+  for (const g of STORY.visitGroups) {
+    const rows = g.cols.filter(k => pr[k] != null && pr[k] !== '');
+    if (!rows.length) continue;
+    const el = document.createElement('div');
+    el.className = 'tgrp';
+    el.innerHTML = '<h4>' + esc(g.label) + '</h4><dl>' + rows.map(k => '<dt>' + esc(label(k)) + '</dt><dd>' + esc(pr[k]) + '</dd>').join('') + '</dl>';
+    $('sideBody').appendChild(el);
+    out.push({el, say: g.say || g.label});
+  }
+  return out;
+}
+// 寄る建物：先に選んでいた建物と、ラベルのある大きな建物（なければ高い建物）を、互いに離れたものから3つまで
+function targets(n) {
+  const fs = {};
+  for (const f of DATA.features) fs[f.id] = f;
+  let cand = labPts.filter(p => !p.dup).sort((u, v) => v.area - u.area);
+  if (!cand.length) cand = DATA.features.filter(f => !f.properties.Hfill).sort((u, v) => v.properties.H - u.properties.H).slice(0, 200).map(f => {
+    const g = f.geometry, p = g.type === 'Polygon' ? g.coordinates[0][0] : g.coordinates[0][0][0];
+    const mc = maplibregl.MercatorCoordinate.fromLngLat(p, 0);
+    return {id: f.id, name: null, H: +f.properties.H || 0, mx: mc.x, my: mc.y, mu: mc.meterInMercatorCoordinateUnits()};
+  });
+  const out = [];
+  // 名前で指定された施設（表示名の一部でよい）。見つかった順に
+  for (const nm of STORY.visitNames || []) {
+    const p = labPts.find(q => q.name.includes(nm) && !out.some(o => o.id === q.id));
+    if (p) out.push(p); else console.warn('撮影モード：寄る施設が見つかりません', nm);
+  }
+  if (saved.sel != null) {
+    const p = labPts.find(q => q.id === saved.sel) || cand.find(q => q.id === saved.sel);
+    if (p) out.push(p);
+  }
+  for (const p of cand) {
+    if (out.length >= n) break;
+    if (out.every(q => q.id !== p.id && Math.hypot(p.mx - q.mx, p.my - q.my) / p.mu > 400)) out.push(p);
+  }
+  return out.slice(0, n).map(p => {
+    const f = fs[p.id], pr = f.properties, lg = CFG.legend.find(l => l.color === pr.C);
+    const name = hasName(pr) ? String(pr[CFG.nameKey]) : (lg ? lg.label : '建物');
+    return {f, name, sub: [lg && lg.label !== name ? lg.label : '', '高さ ' + pr.H + ' m'].filter(Boolean).join('　・　'),
+            center: new maplibregl.MercatorCoordinate(p.mx, p.my, 0).toLngLat(), H: p.H * exag};
+  });
+}
+
+const PAINTS = [['bx', 'fill-extrusion-color'], ['bxFill', 'fill-extrusion-color'], ['surX', 'fill-extrusion-color'], ['bndCase', 'line-opacity'], ['bndLine', 'line-opacity'],
+  ...(BM.includes('photo') ? [['photo', 'raster-brightness-max']] : [])];
+
+// 地図の読み込みが終わる前に押されたら、終わってから始める
+const loaded = new Promise(r => map.once('load', r));
+// from：始める場面の番号（SCENES の順。0 ははじめから）
+async function start(withCap, from = 0) {
+  if (saved) return;
+  saved = {};
+  await loaded;
+  const my = ++run;
+  capOn = withCap;
+  if (!saved) return;  // 待っている間に Esc で取りやめた
+  saved = {lb: $('lbChk').checked, sur: $('surChk').checked, bm: bmNow, sel: sel && sel.src === 'b' ? sel.id : null,
+           paint: PAINTS.map(([id, pr]) => [id, pr, map.getPaintProperty(id, pr)])};
+  // 白い幕を下ろしてから下準備（主の建物は灰色、境界は消す、背景は航空写真、真上から）
+  fade.style.transition = 'none'; fade.style.opacity = 1;
+  document.body.classList.add('touring');
+  cover.hidden = false;
+  clearSel();
+  $('lbChk').checked = false; layoutLabels();
+  if (BM.includes('photo') && bmNow !== 'photo') document.querySelector('[data-bm="photo"]').click();
+  addGroups(); addBeams();
+  map.removeFeatureState({source: 'b'}); litNow = []; catNow = []; paintC();
+  for (const id of ['bndCase', 'bndLine']) map.setPaintProperty(id, 'line-opacity', 0);
+  const c0 = map.cameraForBounds(CFG.bbox, {padding: 80}), z0 = c0.zoom;
+  // 途中から始めるときは、その場面の前までが終わった状態にしておく（カメラの位置、境界、建物の色）
+  const pose = [[z0 - .3, 0, 0], [z0 - .3, 0, 0], [z0, 0, 0], [z0 + 1.2, 60, -25], [z0 + 1.4, 60, -45], [z0 + 1.4, 60, -70], [z0 + 1.4, 60, -70]][from];
+  map.jumpTo({center: c0.center, zoom: pose[0], pitch: pose[1], bearing: pose[2]});
+  if (from >= 2) { map.setPaintProperty('bndCase', 'line-opacity', .7); map.setPaintProperty('bndLine', 'line-opacity', 1); }
+  if (from >= 4) { beams(1); recolor(1); }  // 光の柱が終わって、建物に色が付いた状態
+  await new Promise(r => { map.once('idle', r); setTimeout(r, 5000); });
+  if (my !== run) return;
+  try {
+    // 1. 真上から：建物と航空写真に、境界が浮かび上がる
+    fade.style.transition = ''; fade.style.opacity = 0;
+    if (from <= 0 && capOn && STORY.intro.length) {
+      const ms = STORY.intro.reduce((a, c) => a + (c.ms || 5000) + 900, 0);
+      await Promise.all([cam({zoom: z0 - .1, bearing: 8}, ms, true), cards(STORY.intro)]);
+    }
+    if (from <= 1) await Promise.all([cam({zoom: z0, bearing: 0}, 4000), anim(4000, (e, t) => {
+      const b = clamp01((t - .25) / .5);
+      map.setPaintProperty('bndCase', 'line-opacity', .7 * b);
+      map.setPaintProperty('bndLine', 'line-opacity', b);
+    })]);
+    // 2. 傾けて3Dにしながら近づく。STORY.orbit があれば、そのまま街の全体をぐるりと回る
+    if (from <= 2) {
+      cap(STORY.tilt[0], STORY.tilt[1]);
+      if (STORY.orbit) await anim(STORY.tiltMs, (e, t) => map.jumpTo({pitch: lerp(0, 60, smooth01(t / .4)), bearing: lerp(0, -25 - STORY.orbit, e), zoom: lerp(z0, z0 + 1.2, e)}));
+      else await cam({pitch: 60, bearing: -25, zoom: z0 + 1.2}, STORY.tiltMs);
+    }
+    // 3. 中心から順に、空から光が下りてきて建物に色が付き、そのあと本来の色分けになる
+    if (from <= 3) {
+      document.body.classList.add('tourLegend');
+      cap(STORY.beams[0], STORY.beams[1]);
+      beams(0); showBeams(true);
+      // カメラは暗くなる・光る・明るく戻るの間ずっと、止まらずにゆっくり回る
+      await Promise.all([cam({bearing: -45, zoom: z0 + 1.4}, 1000 + STORY.beamMs + STORY.recolorMs + 1200, true), (async () => {
+        await anim(1000, e => dim(e));
+        await anim(STORY.beamMs, (e, t) => beams(t));
+        cap(STORY.recolor[0], STORY.recolor[1]);
+        await anim(STORY.recolorMs, (e, t) => recolor(t));
+        await anim(1200, e => dim(1 - e));
+      })()]);
+      showBeams(false);
+      await wait(1000);
+      document.body.classList.remove('tourLegend');
+    }
+    // 3.5 レイヤーの表示・非表示：パネルを出して、周辺の建物を消して戻す（照合した建物だけが残る）
+    if (from <= 4 && STORY.layers && SUR.features.length) {
+      cap(STORY.layers[0], STORY.layers[1]);
+      document.body.classList.add('tourPanel');
+      const row = $('surChkRow'), chk = $('surChk');
+      const set = on => { chk.checked = on; chk.dispatchEvent(new Event('change')); };
+      await Promise.all([cam({bearing: map.getBearing() - 25}, 9000, true), (async () => {
+        await wait(1200); row.classList.add('tourHi');
+        await wait(900); set(false);
+        await wait(3500); set(true);
+        await wait(1500); row.classList.remove('tourHi');
+      })()]);
+      document.body.classList.remove('tourPanel');
+    }
+    // 4. 建物に寄って、詳細を見せながら回り込む
+    if (from <= 5) for (const p of targets(STORY.visits)) {
+      cap('');
+      $('lbChk').checked = false; layoutLabels();
+      await fly({center: p.center, zoom: p.H > 60 ? 16.4 : p.H > 30 ? 16.9 : 17.4, pitch: 62, bearing: map.getBearing() - 40, duration: 4000, curve: 1.3});
+      pick(p.f, 'b');
+      if (saved.lb) { $('lbChk').checked = true; layoutLabels(); }
+      const orbit = cam({bearing: map.getBearing() + 70}, STORY.visitMs, true);
+      if (STORY.visitGroups) {
+        // 詳細パネルを列のまとまりごとに見せて、順に光らせる（最後に全部）
+        const groups = showGroups(p.f.properties), steps = groups.length + (STORY.visitJoin ? 1 : 0);
+        const slot = STORY.visitMs / (steps + .4);
+        cap(p.name, p.sub);
+        await wait(slot * .4);
+        for (let i = 0; i < groups.length; i++) {
+          groups.forEach((g, j) => g.el.classList.toggle('hi', i === j));
+          cap(p.name, groups[i].say);
+          await wait(slot);
+        }
+        if (STORY.visitJoin) { groups.forEach(g => g.el.classList.add('hi')); cap(p.name, STORY.visitJoin); }
+      } else cap(p.name, [p.sub, STORY.visitNote].filter(Boolean).join('　・　'));
+      await orbit;
+      clearSel();
+    }
+    // 5. 引いて全体を見渡して終わる（Esc を押すまでこのまま）
+    cap('');
+    $('lbChk').checked = false; layoutLabels();
+    await fly({center: c0.center, zoom: z0 + .2, pitch: 50, bearing: map.getBearing() + 20, duration: 4500});
+    cap(STORY.end[0], STORY.end[1]);
+    if (capOn && STORY.outro.length) {
+      const ms = STORY.outro.reduce((a, c) => a + (c.ms || 5000) + 900, 0);
+      await Promise.all([cam({bearing: map.getBearing() + 40}, 5000 + ms, true), (async () => { await wait(5000); cap(''); await cards(STORY.outro, true); })()]);
+    } else await cam({bearing: map.getBearing() + 30}, 10000, true);
+  } catch (err) {
+    if (err !== STOP) { console.error(err); stop(); }
+  }
+}
+// 止めて、始める前の表示に戻す（カメラの位置はそのまま）
+function stop() {
+  if (!saved) return;
+  if (!saved.paint) { saved = null; return; }  // まだ始まっていない（読み込み待ち）
+  run++;
+  map.stop();
+  cap('');
+  clearSel();
+  showBeams(false);
+  map.removeFeatureState({source: 'b'});
+  for (const [id, pr, v] of saved.paint) map.setPaintProperty(id, pr, v);
+  if (bmNow !== saved.bm) document.querySelector('[data-bm="' + saved.bm + '"]').click();
+  $('lbChk').checked = saved.lb; layoutLabels();
+  document.body.classList.remove('touring', 'tourLegend', 'tourPanel');
+  cardEl.classList.remove('show');
+  $('surChkRow').classList.remove('tourHi');
+  if ($('surChk').checked !== saved.sur) { $('surChk').checked = saved.sur; $('surChk').dispatchEvent(new Event('change')); }
+  cover.hidden = true;
+  fade.style.transition = 'none'; fade.style.opacity = 0;
+  saved = null;
+  fitLegend();
+}
+$('tourBtn').onclick = () => start(true, +$('tourFrom').value);
+addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'Escape') stop();
+  else if (e.key === 't' || e.key === 'T') start(!e.shiftKey);
+  else if (/^Digit[1-7]$/.test(e.code) && e.target.tagName !== 'SELECT') start(!e.shiftKey, +e.code.slice(5) - 1);
+});
+})();
 </script>
 </body>
 </html>

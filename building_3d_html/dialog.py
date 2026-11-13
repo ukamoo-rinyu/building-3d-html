@@ -1,4 +1,7 @@
-"""書き出しの画面。処理そのものは core/ に任せる。"""
+"""書き出しの画面。処理そのものは core/ に任せる。
+
+(EN) Dialog to export a polygon layer as a single-file 3D map HTML.
+"""
 
 import os
 import re
@@ -545,7 +548,7 @@ class Building3DHtmlDialog(QDialog):
         lines.append(path)
 
         box = QMessageBox(self)
-        box.setWindowTitle("書き出しました")
+        box.setWindowTitle("書き出しました / Exported")
         box.setText("\n".join(lines))
         open_btn = box.addButton("ブラウザで開く", _enum(QMessageBox, "ButtonRole", "AcceptRole"))
         box.addButton("OK", _enum(QMessageBox, "ButtonRole", "RejectRole"))

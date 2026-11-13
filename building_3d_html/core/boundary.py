@@ -1,4 +1,5 @@
 """境界：区境界などの面のレイヤを、地面に引く線として書き出す。画面には依存しない。
+(EN) Export boundary polygons (e.g. ward borders) as ground lines for the 3D HTML.
 
 - 面の外周（と穴）を線にして描く。属性は入れない（クリックもしない）
 - 書き出す建物のまわり（margin 度）にかかる面だけにする。市全体の区境界を選んでも、

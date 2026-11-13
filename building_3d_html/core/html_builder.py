@@ -1,4 +1,7 @@
-"""テンプレート（templates/map3d.html）にデータと MapLibre を埋め込み、1つのHTMLにする。"""
+"""テンプレート（templates/map3d.html）にデータと MapLibre を埋め込み、1つのHTMLにする。
+
+(EN) Embed the data and MapLibre GL JS into templates/map3d.html to make one HTML file.
+"""
 
 import html
 import json

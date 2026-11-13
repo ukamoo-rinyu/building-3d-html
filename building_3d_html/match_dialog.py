@@ -1,4 +1,7 @@
-"""施設（点・敷地）と建物の照合（簡易版）の画面。処理そのものは core/matcher.py に任せる。"""
+"""施設（点・敷地）と建物の照合（簡易版）の画面。処理そのものは core/matcher.py に任せる。
+
+(EN) Dialog to match facility points / site polygons to building polygons.
+"""
 
 from qgis.core import (
     QgsCategorizedSymbolRenderer,
@@ -23,13 +26,14 @@ from qgis.PyQt.QtWidgets import (
     QVBoxLayout,
 )
 
-from .core.matcher import INSIDE, NEAR, SITE, is_site_layer, match
+from .core.matcher import INSIDE, MANUAL, NEAR, SITE, is_site_layer, match
 from .dialog import _enum
 
-TITLE = "点と建物の照合"
+TITLE = "点と建物の照合 / Match facilities to buildings"
 COLOR_INSIDE = "#7f9fc4"
 COLOR_NEAR = "#ee9a4f"
 COLOR_SITE = "#79b37f"
+COLOR_MANUAL = "#9b7fc4"
 COLOR_NONE = "#cf3f4f"
 
 
@@ -134,6 +138,8 @@ class MatchDialog(QDialog):
                 f"　近くの建物で代用：{r.near:,} 件（オレンジ色・要確認）",
                 f"　建物なし：{r.none:,} 件（赤い点・要確認）",
             ]
+        if r.manual:
+            lines.append(f"　手で指定：{r.manual:,} 件（紫色）")
         if r.skipped:
             lines.append(f"　位置が空で照合できなかった施設：{r.skipped:,} 件")
         lines += [
@@ -147,9 +153,12 @@ class MatchDialog(QDialog):
             lines += ["", "直すときは、敷地の形を直してから、もう一度照合してください。"]
         if r.checks:
             lines += ["", "要確認の施設は、右に開く「照合の確認・調整」で1件ずつ地図で直せます。"]
+        if r.matched:
+            lines += ["", "照合できた施設も、「照合の確認・調整」の「表示」を切り替えると1件ずつ確かめられます"
+                          "（Google マップなどで場所を見比べられます）。"]
         QMessageBox.information(self, TITLE, "\n".join(lines))
         self.accept()
-        if r.checks:
+        if r.checks or r.matched:
             from .adjust_dock import open_dock
             params = {"points": points, "buildings": buildings, "distance": self.distance.value(),
                       "selected_only": self.selected_only.isChecked()}
@@ -173,9 +182,10 @@ def _fill(color):
 
 
 def _style_buildings(layer):
-    """判定で色分けする：建物の中＝青、敷地の中＝緑、近くの建物で代用＝オレンジ。"""
+    """判定で色分けする：建物の中＝青、敷地の中＝緑、手で指定＝紫、近くの建物で代用＝オレンジ。"""
     cats = [QgsRendererCategory(INSIDE, _fill(COLOR_INSIDE), INSIDE),
             QgsRendererCategory(SITE, _fill(COLOR_SITE), SITE),
+            QgsRendererCategory(MANUAL, _fill(COLOR_MANUAL), MANUAL),
             QgsRendererCategory(NEAR, _fill(COLOR_NEAR), NEAR + "（要確認）")]
     layer.setRenderer(QgsCategorizedSymbolRenderer("判定", cats))
 

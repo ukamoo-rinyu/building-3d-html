@@ -1,4 +1,7 @@
-"""住所から点を作る画面。処理そのものは core/geocoder.py に任せる。"""
+"""住所から点を作る画面。処理そのものは core/geocoder.py に任せる。
+
+(EN) Dialog to create points from addresses (offline, MLIT Location Reference Information).
+"""
 
 import os
 
@@ -19,7 +22,7 @@ from qgis.PyQt.QtWidgets import (
 from .core.geocoder import AddressBook, geocode
 from .dialog import _enum
 
-TITLE = "住所から点を作る"
+TITLE = "住所から点を作る / Points from addresses"
 SETTING_FOLDER = "building_3d_html/isj_folder"
 ADDRESS_FIELDS = ("住所", "所在地", "address", "ADDRESS", "Address")
 

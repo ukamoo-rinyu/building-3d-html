@@ -1,10 +1,14 @@
 """施設（点または敷地の面）と建物（面）の照合（簡易版）。画面には依存しない。
+(EN) Match facilities (points or site polygons) to building polygons: containing building,
+nearest building within a distance, or buildings whose centroid is inside the site.
 
 当てはめ方（施設が点のとき：1つの施設に1棟）
   1. 点が入っている建物
   2. どれにも入っていなければ、max_distance（m）以内でいちばん近い建物
 当てはめ方（施設が面＝敷地のとき：1つの施設に何棟でも）
   - 中心（建物の内側にとった点）が敷地に入っている建物を、すべて当てはめる
+手で指定した施設（施設レイヤの「指定した建物」の列に建物のIDが入っているもの）
+  - 位置にかかわらず、その建物（何棟でも）を当てはめる。「照合の確認・調整」で建物を選ぶと入る
 結果
   - 建物レイヤ：当たった建物の形 ＋ 建物の属性 ＋ 施設の属性 ＋ 施設数・判定・距離m
     1つの建物に複数の施設が当たったら1行にまとめ、施設の属性は「 / 」でつなぐ
@@ -48,19 +52,26 @@ else:
 INSIDE = "建物の中"
 NEAR = "近くの建物で代用"
 SITE = "敷地の中"
+MANUAL = "手で指定"
 NONE = "建物なし"
+MANUAL_FIELD = "指定した建物"   # 施設レイヤの列。建物のIDを KEY_SEP でつないで入れる
+KEY_SEP = ";"
+# 建物のIDの列（この順に探す）。なければ建物レイヤの fid を「fid:12」の形で使う
+KEY_FIELDS = ("建物ID", "buildingID", "gml_id", "bldg_id", "id", "ID")
 JOIN = " / "
 FACILITY_SUFFIX = "_施設"
 
 
 class Check:
-    """要確認（近くの建物で代用・建物なし）になった施設1件。"""
+    """照合した施設1件。要確認（近くの建物で代用・建物なし）と、照合できた施設（建物の中・敷地の中）の両方に使う。"""
 
-    def __init__(self, point_fid, status, building_fid=None, distance=None):
+    def __init__(self, point_fid, status, building_fid=None, distance=None, building_fids=None):
         self.point_fid = point_fid        # 施設レイヤでの fid
-        self.status = status              # NEAR か NONE
+        self.status = status              # NEAR・NONE（要確認）か INSIDE・SITE・MANUAL（照合できた）
         self.building_fid = building_fid  # 当てはめた建物（建物レイヤでの fid）。建物なしなら None
         self.distance = distance          # 建物までの距離（m）
+        # 当てはめた建物すべて（敷地のときは何棟もある）
+        self.building_fids = building_fids or ([building_fid] if building_fid is not None else [])
 
 
 class MatchResult:
@@ -70,15 +81,17 @@ class MatchResult:
         self.inside = 0         # 建物の中に入っていた点
         self.site = 0           # 敷地の中に建物があった施設（面）
         self.site_buildings = 0 # 敷地の中にあった建物の数（重なりは1棟と数える）
+        self.manual = 0         # 手で指定した建物を当てた施設
         self.near = 0           # 近くの建物で代用した点
         self.none = 0           # 建物なしの点
         self.skipped = 0        # 位置が空で照合できなかった点
         self.shared = 0         # 複数の施設が当たった建物の数
         self.checks = []        # 要確認の施設：Check のリスト（施設の順）
+        self.matched = []       # 照合できた施設（建物の中・敷地の中・手で指定）：Check のリスト（施設の順）
 
     @property
     def points(self):
-        return self.inside + self.site + self.near + self.none + self.skipped
+        return self.inside + self.site + self.manual + self.near + self.none + self.skipped
 
 
 def _text(value):
@@ -120,6 +133,48 @@ def _to_point(geom):
     return geom.asPoint()
 
 
+def building_key_field(layer):
+    """建物のIDの列の名前。なければ None（fid を使う）。"""
+    for n in KEY_FIELDS:
+        if layer.fields().indexOf(n) >= 0:
+            return n
+    return None
+
+
+def building_key(feature, key_field):
+    """手で指定するときに施設レイヤへ書く、建物1棟のID。"""
+    if key_field:
+        key = _text(feature.attribute(key_field))
+        if key:
+            return key
+    return f"fid:{feature.id()}"
+
+
+def parse_keys(value):
+    """「指定した建物」の列の値を、建物のIDのリストにする。"""
+    return [k.strip() for k in _text(value).split(KEY_SEP) if k.strip()]
+
+
+def _key_lookup(buildings_layer):
+    """建物のID → 建物の fid。"""
+    key_field = building_key_field(buildings_layer)
+    req = QgsFeatureRequest().setFlags(_no_geometry())
+    if key_field:
+        req.setSubsetOfAttributes([key_field], buildings_layer.fields())
+    else:
+        req.setNoAttributes()
+    lookup = {}
+    for f in buildings_layer.getFeatures(req):
+        lookup.setdefault(building_key(f, key_field), f.id())
+        lookup.setdefault(f"fid:{f.id()}", f.id())
+    return lookup
+
+
+def _no_geometry():
+    flags = getattr(QgsFeatureRequest, "Flag", QgsFeatureRequest)
+    return getattr(flags, "NoGeometry")
+
+
 def is_site_layer(layer):
     """施設のレイヤが面（敷地）なら True。"""
     return layer.geometryType() == POLYGON
@@ -151,7 +206,21 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
 
     sites = is_site_layer(points_layer)
     centers = {}  # 建物の fid → 建物の内側にとった点（敷地のとき使う）
+    manual_idx = points_layer.fields().indexOf(MANUAL_FIELD)
+    lookup = None
     for pf in points_layer.getFeatures(request):
+        # 手で指定した建物があれば、位置にかかわらずそれを当てる（見つからないIDは無視して、ふつうに照合する）
+        keys = parse_keys(pf.attribute(manual_idx)) if manual_idx >= 0 else []
+        if keys:
+            if lookup is None:
+                lookup = _key_lookup(buildings_layer)
+            fids = list(dict.fromkeys(lookup[k] for k in keys if k in lookup))
+            if fids:
+                result.manual += 1
+                result.matched.append(Check(pf.id(), MANUAL, fids[0], 0.0, fids))
+                for fid in fids:
+                    hits.setdefault(fid, []).append((pf, MANUAL, 0.0))
+                continue
         if sites:
             fids = _find_buildings_in_site(index, centers, pf.geometry(), to_b)
             if fids is None:
@@ -161,6 +230,7 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
                 unmatched.append(pf)
             else:
                 result.site += 1
+                result.matched.append(Check(pf.id(), SITE, fids[0], 0.0, fids))
                 for fid in fids:
                     hits.setdefault(fid, []).append((pf, SITE, 0.0))
             continue
@@ -181,6 +251,7 @@ def match(points_layer, buildings_layer, max_distance=30.0, selected_points_only
             continue
         if status == INSIDE:
             result.inside += 1
+            result.matched.append(Check(pf.id(), INSIDE, fid, 0.0))
         else:
             result.near += 1
             result.checks.append(Check(pf.id(), NEAR, fid, dist))
@@ -285,6 +356,8 @@ def _building_layer(buildings_layer, points_layer, hits, index):
             attrs.append(len(items))
             if near:  # 1つでも近くで代用なら要確認
                 attrs.append(NEAR)
+            elif any(s == MANUAL for _, s, _ in items):
+                attrs.append(MANUAL)
             else:
                 attrs.append(items[0][1])  # 建物の中 または 敷地の中
             attrs.append(round(max(near), 1) if near else 0.0)

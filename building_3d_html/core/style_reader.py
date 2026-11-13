@@ -1,4 +1,5 @@
 """QGIS の色分け（レンダラー）から、地物ごとの塗り色と凡例を読む。
+(EN) Read fill colours and legend from the QGIS renderer (single symbol / categorized).
 
 どの地物にどのシンボルが当たるかは QGIS 自身に判定させ（legendKeysForFeature）、
 JS 側で分類の判定を再現しない。
